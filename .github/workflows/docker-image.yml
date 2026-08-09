@@ -1,0 +1,90 @@
+name: Docker image (reusable)
+
+# Build a container, smoke-test the ARTIFACT, publish to GHCR on main.
+# The smoke command tests the built image itself (browsers present, entry
+# wired, contracts honored) — coverage no source-level test can give.
+#
+# Caller (typical: paths-triggered on the image's inputs):
+#   name: engine image
+#   on:
+#     pull_request: { paths: ['engine/**'] }
+#     push: { branches: [main], paths: ['engine/**'] }
+#     workflow_dispatch:
+#   concurrency: { group: engine-image-${{ github.ref }}, cancel-in-progress: true }
+#   permissions: { contents: read, packages: write }
+#   jobs:
+#     image:
+#       uses: nothingfortune/workflows/.github/workflows/docker-image.yml@<sha> # v1
+#       with:
+#         dockerfile: engine/capture/Dockerfile
+#         image_name: dollyvision-engine
+#         smoke_command: |
+#           docker run --rm -v "$PWD/fixtures:/fixtures:ro" "$IMAGE" ...
+#
+# The smoke command runs with $IMAGE set to the locally built tag. It comes
+# from the CALLER'S OWN workflow file (repo-controlled), the same trust
+# level as any hardcoded step.
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile:
+        description: 'Path to the Dockerfile'
+        type: string
+        required: true
+      image_name:
+        description: 'GHCR image name (published as ghcr.io/<owner>/<image_name>)'
+        type: string
+        required: true
+      context:
+        description: 'Docker build context'
+        type: string
+        required: false
+        default: '.'
+      smoke_command:
+        description: 'Shell run after build with $IMAGE set to the built tag; non-zero exit fails the job'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build image
+        env:
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          CONTEXT: ${{ inputs.context }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+        run: docker build -f "$DOCKERFILE" -t "$IMAGE_NAME:ci" "$CONTEXT"
+
+      - name: Smoke-test the artifact
+        if: inputs.smoke_command != ''
+        env:
+          IMAGE: ${{ inputs.image_name }}:ci
+        run: ${{ inputs.smoke_command }}
+
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          IMAGE_NAME: ${{ inputs.image_name }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/${IMAGE_NAME}"
+          docker tag "$IMAGE_NAME:ci" "$IMAGE:latest"
+          docker tag "$IMAGE_NAME:ci" "$IMAGE:$GITHUB_SHA"
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:$GITHUB_SHA"
