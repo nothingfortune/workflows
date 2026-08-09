@@ -1,0 +1,103 @@
+name: Deploy design preview (reusable)
+
+# Publishes a static design suite to Cloudflare Pages: main -> production
+# URL, other branches -> per-branch preview URL. The Pages project is
+# auto-created on first run, named from the input or derived as
+# <repo-lowercase>-design.
+#
+# Caller (dormant until the path exists — paths-filtered workflows never
+# run when nothing under them changes):
+#   name: Deploy design preview
+#   on:
+#     push: { paths: ['docs/designs/handoff/**'] }
+#     workflow_dispatch:
+#   concurrency: { group: design-preview-${{ github.ref }}, cancel-in-progress: true }
+#   jobs:
+#     deploy:
+#       uses: nothingfortune/workflows/.github/workflows/deploy-design-preview.yml@v1
+#       secrets: inherit
+#
+# Repo secrets required: CLOUDFLARE_API_TOKEN (Account > Cloudflare Pages >
+# Edit), CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  workflow_call:
+    inputs:
+      project_name:
+        description: 'Cloudflare Pages project (default: <repo-lowercase>-design)'
+        type: string
+        required: false
+        default: ''
+      path:
+        description: 'Directory to deploy'
+        type: string
+        required: false
+        default: 'docs/designs/handoff'
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: true
+      CLOUDFLARE_ACCOUNT_ID:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Sanitize BOTH the branch (deploy target) and the project name before
+      # they touch a shell: branch names can carry shell metacharacters, and
+      # Cloudflare project names must be lowercase alphanumeric-hyphen.
+      # Disallowed chars are REPLACED with '-' (not deleted) so distinct refs
+      # can't collapse onto each other and deploy over production.
+      - name: Resolve deploy branch and project
+        id: ref
+        env:
+          RAW_REF: ${{ github.ref_name }}
+          RAW_PROJECT: ${{ inputs.project_name }}
+        run: |
+          SAFE=$(printf '%s' "$RAW_REF" | LC_ALL=C tr -c 'A-Za-z0-9._/-' '-' | tr -s '-' | cut -c1-100)
+          [ -n "$SAFE" ] || SAFE=main
+          echo "branch=$SAFE" >> "$GITHUB_OUTPUT"
+          if [ -n "$RAW_PROJECT" ]; then
+            NAME="$RAW_PROJECT"
+          else
+            NAME="${GITHUB_REPOSITORY#*/}-design"
+          fi
+          NAME=$(printf '%s' "$NAME" | LC_ALL=C tr 'A-Z' 'a-z' | tr -c 'a-z0-9-' '-' | tr -s '-' | sed 's/^-//; s/-$//' | cut -c1-58)
+          echo "project=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure Pages project exists
+        continue-on-error: true
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages project create ${{ steps.ref.outputs.project }} --production-branch=main
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy ${{ inputs.path }}
+            --project-name=${{ steps.ref.outputs.project }}
+            --branch=${{ steps.ref.outputs.branch }}
+
+      - name: Report
+        if: always()
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.deployment-url }}
+          REF: ${{ steps.ref.outputs.branch }}
+          PROJECT: ${{ steps.ref.outputs.project }}
+        run: |
+          {
+            echo "### Design preview deploy"
+            echo "- Project: \`$PROJECT\` · branch \`$REF\`"
+            echo "- URL: $DEPLOY_URL"
+          } >> "$GITHUB_STEP_SUMMARY"

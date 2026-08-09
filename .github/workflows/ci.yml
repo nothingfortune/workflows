@@ -1,0 +1,28 @@
+name: CI (reusable)
+
+# The gate: npm ci + npm run check. Callers own triggers and concurrency:
+#
+#   name: CI
+#   on: { push: { branches: [main] }, pull_request: }
+#   concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }
+#   jobs:
+#     check:
+#       uses: nothingfortune/workflows/.github/workflows/ci.yml@v1
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run check
