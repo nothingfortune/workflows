@@ -67,7 +67,7 @@ jobs:
           else
             NAME="${GITHUB_REPOSITORY#*/}-design"
           fi
-          NAME=$(printf '%s' "$NAME" | LC_ALL=C tr 'A-Z' 'a-z' | tr -c 'a-z0-9-' '-' | tr -s '-' | sed 's/^-//; s/-$//' | cut -c1-58)
+          NAME=$(printf '%s' "$NAME" | LC_ALL=C tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | tr -s '-' | sed 's/^-//; s/-$//' | cut -c1-58)
           echo "project=$NAME" >> "$GITHUB_OUTPUT"
 
       - name: Ensure Pages project exists

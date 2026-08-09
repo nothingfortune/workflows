@@ -1,0 +1,56 @@
+name: Dependabot auto-merge (reusable)
+
+# Enables GitHub's native auto-merge on Dependabot PRs. Auto-merge only
+# COMPLETES once required status checks pass — that guarantee comes from
+# branch protection on main, not from this workflow. Policy (ported from
+# outerReach): auto-merge patch + minor for every ecosystem, plus majors
+# for development-only dependencies; a major PRODUCTION bump is held with
+# a comment for a human.
+#
+# Caller (requires branch protection with required checks to be meaningful):
+#   name: Dependabot auto-merge
+#   on: pull_request
+#   permissions: { contents: write, pull-requests: write }
+#   jobs:
+#     auto-merge:
+#       uses: nothingfortune/workflows/.github/workflows/dependabot-automerge.yml@<sha> # v1
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - name: Enable auto-merge (patch/minor, or dev-dependency major)
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor' ||
+          (steps.meta.outputs.dependency-type == 'direct:development' &&
+           steps.meta.outputs.update-type == 'version-update:semver-major')
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Hold a major production bump for review
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-major' &&
+          steps.meta.outputs.dependency-type != 'direct:development'
+        run: >-
+          gh pr comment "$PR_URL" --body
+          "Major PRODUCTION dependency bump — held for manual review per the
+          dependabot-majors policy (take it deliberately in a dedicated
+          branch, or close)."
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

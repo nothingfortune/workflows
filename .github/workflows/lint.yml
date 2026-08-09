@@ -1,0 +1,20 @@
+name: lint
+
+# Self-CI for this repo: actionlint over every workflow. A YAML or
+# expression error tagged into v1 breaks every consumer at once — this is
+# the blast-radius guard.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.7 -color
