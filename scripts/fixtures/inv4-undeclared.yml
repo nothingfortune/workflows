@@ -1,0 +1,12 @@
+name: bad
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: some/action@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          token: ${{ secrets.SNEAKY_TOKEN }}
