@@ -1,0 +1,9 @@
+name: bad
+on: push
+permissions:
+  contents: read
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - run: printenv

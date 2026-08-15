@@ -18,3 +18,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.7 -color
+
+  # actionlint proves the YAML is CORRECT; this proves it is SAFE — the two
+  # are complementary. These workflows execute with consumers' secrets inside
+  # consumers' repos, so a leak introduced here lands on every project at
+  # once. The selftest runs the auditor against deliberately-broken fixtures
+  # BEFORE the real scan, so a guard that has stopped catching anything fails
+  # loudly instead of passing quietly. No install step: node is preinstalled
+  # on the runner and the auditor has zero dependencies.
+  security-invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: node scripts/audit-selftest.mjs
+      - run: node scripts/audit-workflows.mjs .github/workflows
