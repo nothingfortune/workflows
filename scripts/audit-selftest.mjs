@@ -16,10 +16,19 @@ const EXPECT = {
   'inv1-pr-target.yml': 'INV-1',
   'inv2-unpinned.yml': 'INV-2',
   'inv3-secret-in-run.yml': 'INV-3',
+  // Evasion fixtures (adversarial review, 2026-08-16): context lookups are
+  // case-insensitive and bracket-indexable, so `SECRETS.X` and `secrets['X']`
+  // execute identically — the lowercase-dot-only matcher was a verified full
+  // bypass of INV-3/INV-4, `toJson(SECRETS)` of INV-5, and `github.head_ref`
+  // (a top-level context, not under github.event.) of INV-7.
+  'inv3-bracket-case.yml': 'INV-3',
   'inv4-undeclared.yml': 'INV-4',
+  'inv4-bracket.yml': 'INV-4',
   'inv5-env-dump.yml': 'INV-5',
+  'inv5-tojson-case.yml': 'INV-5',
   'inv6-no-permissions.yml': 'INV-6',
   'inv7-untrusted.yml': 'INV-7',
+  'inv7-headref.yml': 'INV-7',
 };
 
 let failed = 0;
