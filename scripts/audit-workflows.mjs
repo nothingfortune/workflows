@@ -47,22 +47,51 @@ function runBlocks(lines) {
   return blocks;
 }
 
-/** Secret names declared under `on.workflow_call.secrets:`. */
+/** Secret names declared under `on.workflow_call.secrets:`. Anchored to the
+ * `workflow_call:` block by indentation walking, NOT a fixed 4-space depth —
+ * the earlier fixed-depth regex could mistake a job-level `secrets:`
+ * pass-through for the declaration set (or miss a differently-indented real
+ * one entirely). */
 function declaredSecrets(text) {
   const out = new Set();
   const lines = text.split('\n');
-  const start = lines.findIndex((l) => /^\s{4}secrets:\s*$/.test(l));
-  if (start === -1) return out;
-  const indent = lines[start].length - lines[start].trimStart().length;
-  for (let i = start + 1; i < lines.length; i += 1) {
+  const wc = lines.findIndex((l) => /^\s*workflow_call:\s*$/.test(l));
+  if (wc === -1) return out;
+  const wcIndent = lines[wc].length - lines[wc].trimStart().length;
+  for (let i = wc + 1; i < lines.length; i += 1) {
     const line = lines[i];
     if (line.trim() === '') continue;
     const lead = line.length - line.trimStart().length;
-    if (lead <= indent) break;
-    const m = /^\s*([A-Z0-9_]+):\s*$/.exec(line);
-    if (m) out.add(m[1]);
+    if (lead <= wcIndent) break; // left the workflow_call block
+    if (!/^\s*secrets:\s*$/.test(line)) continue;
+    const secIndent = lead;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const inner = lines[j];
+      if (inner.trim() === '') continue;
+      const innerLead = inner.length - inner.trimStart().length;
+      if (innerLead <= secIndent) break;
+      const m = /^\s*([A-Za-z0-9_]+):\s*$/.exec(inner);
+      if (m && innerLead === secIndent + 2) out.add(m[1]);
+    }
+    break;
   }
   return out;
+}
+
+/** Every secret reference inside ${{ }} expressions, in EVERY spelling GitHub
+ * accepts: context names are case-insensitive, and both dot and bracket index
+ * syntax work — `${{ SECRETS.X }}` and `${{ secrets['X'] }}` execute exactly
+ * like `${{ secrets.X }}`. The lowercase-dot-only version of this matcher was
+ * a verified full bypass of INV-3 and INV-4. */
+const SECRET_REF =
+  /\$\{\{[^}]*?\bsecrets\s*(?:\.\s*([A-Za-z0-9_]+)|\[\s*['"]([A-Za-z0-9_]+)['"]\s*\])/gi;
+
+function secretRefs(text) {
+  const refs = [];
+  for (const m of text.matchAll(SECRET_REF)) {
+    refs.push({ name: m[1] ?? m[2], index: m.index });
+  }
+  return refs;
 }
 
 export function auditFile(name, text) {
@@ -100,7 +129,8 @@ export function auditFile(name, text) {
   // `curl`/`echo` exfiltrates it and log masking can be defeated by encoding.
   for (const block of runBlocks(lines)) {
     for (const { n, text: t } of block) {
-      if (/\$\{\{\s*secrets\./.test(t)) add('INV-3 secret inside run:', n, t.trim().slice(0, 80));
+      SECRET_REF.lastIndex = 0;
+      if (SECRET_REF.test(t)) add('INV-3 secret inside run:', n, t.trim().slice(0, 80));
     }
   }
 
@@ -111,12 +141,11 @@ export function auditFile(name, text) {
   // reviewable diff instead of a silent widening.
   const declared = declaredSecrets(text);
   const seen = new Set();
-  for (const m of text.matchAll(/\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g)) {
-    const secretName = m[1];
+  for (const { name: secretName, index } of secretRefs(text)) {
     if (AUTO_SECRETS.has(secretName) || seen.has(secretName)) continue;
     seen.add(secretName);
     if (!declared.has(secretName)) {
-      const line = text.slice(0, m.index).split('\n').length;
+      const line = text.slice(0, index).split('\n').length;
       add('INV-4 undeclared secret', line, `secrets.${secretName} is not declared in workflow_call.secrets`);
     }
   }
@@ -131,8 +160,11 @@ export function auditFile(name, text) {
       }
     }
   }
-  if (/toJSON\(\s*secrets\s*\)/.test(text)) {
-    add('INV-5 environment dump', text.slice(0, text.indexOf('toJSON')).split('\n').length, 'toJSON(secrets)');
+  // Case-insensitive: both the function name and the context name are —
+  // `toJson(SECRETS)` executes identically.
+  const dumpMatch = /tojson\s*\(\s*secrets\s*\)/i.exec(text);
+  if (dumpMatch) {
+    add('INV-5 environment dump', text.slice(0, dumpMatch.index).split('\n').length, dumpMatch[0]);
   }
 
   // INV-6 — an explicit top-level `permissions:` declaration. Without one the
@@ -146,9 +178,14 @@ export function auditFile(name, text) {
 
   // INV-7 — attacker-authored event text must not be interpolated into a
   // shell. Titles, branch names and comment bodies can carry `$( )`; read
-  // them through `env:` instead so the shell never parses them.
+  // them through `env:` instead so the shell never parses them. Covers the
+  // TOP-LEVEL contexts too: `github.head_ref` (the PR branch name — the
+  // textbook injection vector) and `github.ref_name` live directly on
+  // `github.*`, not under `github.event.`, and the event-only version of this
+  // rule let `run: git checkout ${{ github.head_ref }}` straight through.
+  // Case-insensitive like every context lookup.
   const UNTRUSTED =
-    /\$\{\{\s*github\.event\.(issue|pull_request|comment|review|review_comment|head_commit|commits)\b[^}]*\}\}/;
+    /\$\{\{[^}]*\bgithub\s*\.\s*(?:head_ref|ref_name|event\s*\.\s*(?:issue|pull_request|comment|review|review_comment|head_commit|commits|client_payload)\b[^}]*)/i;
   for (const block of runBlocks(lines)) {
     for (const { n, text: t } of block) {
       if (UNTRUSTED.test(t)) add('INV-7 untrusted input in run:', n, t.trim().slice(0, 80));
