@@ -15,11 +15,16 @@ name: WP PR checks (reusable)
 #
 # Caller contract — the repo must define:
 #   - npm scripts: type-check, test:js, test:ci, redirects:test, build:theme-js,
-#     build:theme-css (customer suite names stay in the caller's package.json —
-#     test:ci is the caller-owned aggregate this workflow calls)
+#     build:theme-css, test:e2e (customer suite names stay in the caller's
+#     package.json — test:ci is the caller-owned aggregate this workflow calls)
 #   - composer scripts/binaries: phpcs, phpunit
 #   - tests/bin/run.sh, bin/version-check.sh, bin/repo-hygiene.sh
 #   - .gitleaks.toml
+#   - redirects job: scripts/redirects.mts, config/redirects.json,
+#     config/redirects.json.example
+#   - real-wp-e2e job: .ddev/ (a bootable DDEV project), tests/fixtures/ci-seed.sql,
+#     tests/integration/*.php, and the `wp content-seed` / `wp drift-check` CLI
+#     commands available inside the DDEV web container
 #
 # Caller:
 #   name: PR Checks (Gate 1)
@@ -27,7 +32,7 @@ name: WP PR checks (reusable)
 #     pull_request: { branches: [main], types: [opened, synchronize, reopened, ready_for_review] }
 #     push: { branches: [main] }
 #     workflow_dispatch:
-#   concurrency: { group: pr-checks-${{ github.ref }}, cancel-in-progress: true }
+#   concurrency: { group: "pr-checks-${{ github.ref }}", cancel-in-progress: true }
 #   permissions: { contents: read }
 #   jobs:
 #     gate:
@@ -289,7 +294,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Node ${{ inputs.node_version }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -326,7 +331,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Node ${{ inputs.node_version }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ inputs.node_version }}
           cache: npm
@@ -492,9 +497,11 @@ jobs:
       # not a job-level skip). Fail-safe: anything but pure docs → run the full e2e.
       - name: Detect e2e-relevant changes
         id: changes
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
         run: |
           code=true
-          base_ref="${{ github.base_ref }}"
+          base_ref="${PR_BASE_REF}"
           if [ -n "${base_ref}" ]; then
             git fetch --no-tags --depth=1 origin "${base_ref}" >/dev/null 2>&1 || true
             files=$(git diff --name-only "origin/${base_ref}" HEAD 2>/dev/null || echo "")
@@ -619,7 +626,7 @@ jobs:
 
       - name: Set up Node ${{ inputs.node_version }}
         if: steps.changes.outputs.code == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ inputs.node_version }}
           cache: npm

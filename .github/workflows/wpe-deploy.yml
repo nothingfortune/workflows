@@ -116,7 +116,6 @@ jobs:
       WPE_REQUIRE_PLUGINS: ${{ inputs.require_plugins }}
       WPE_CANONICAL_URL: ${{ inputs.canonical_url }}
       WPE_DISPLAY_TZ: ${{ inputs.display_tz }}
-      QA_USER_PASSWORD: ${{ secrets.QA_USER_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -156,6 +155,8 @@ jobs:
           { echo "$i=$INSTALL"; echo "$u=$url"; echo "DEPLOY_URL=$url"; } >> "$GITHUB_ENV"
 
       - name: Build and deploy
+        env:
+          QA_USER_PASSWORD: ${{ secrets.QA_USER_PASSWORD }}
         run: |
           # ONE source of truth for "which site did we just deploy": the env-mapping step
           # above, fed into bin/lib/wpe-env.sh's resolvers. bin/deploy.sh reads the same
