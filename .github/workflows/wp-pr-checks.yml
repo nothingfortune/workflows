@@ -1,0 +1,772 @@
+name: WP PR checks (reusable)
+
+# Gate 1 for a WordPress/Bedrock theme repo: nine jobs run on every PR.
+#   - tests:             composer install + audit + PHPCS (WordPress security) + PHPUnit
+#   - composer-validate: composer validate --strict (no install)
+#   - php-syntax:        php -l over the whole tree, across inputs.php_syntax_versions
+#   - redirects:         unit-test the redirects tool + validate config/redirects.json
+#   - theme-js:          npm ci + npm audit + the caller's type-check/test:js/test:ci
+#                         scripts + two build-drift gates (theme JS, theme CSS)
+#   - shell-tests:       bin/lib shell unit tests + WP core version pin + repo hygiene
+#   - real-wp-e2e:       DDEV + Playwright against a real WP boot (draft- and docs-skip
+#                         aware, additionally gated on inputs.run_e2e)
+#   - secret-scan:       gitleaks
+#   - php-compat:        PHPUnit across inputs.php_compat_versions
+#
+# Caller contract — the repo must define:
+#   - npm scripts: type-check, test:js, test:ci, redirects:test, build:theme-js,
+#     build:theme-css (customer suite names stay in the caller's package.json —
+#     test:ci is the caller-owned aggregate this workflow calls)
+#   - composer scripts/binaries: phpcs, phpunit
+#   - tests/bin/run.sh, bin/version-check.sh, bin/repo-hygiene.sh
+#   - .gitleaks.toml
+#
+# Caller:
+#   name: PR Checks (Gate 1)
+#   on:
+#     pull_request: { branches: [main], types: [opened, synchronize, reopened, ready_for_review] }
+#     push: { branches: [main] }
+#     workflow_dispatch:
+#   concurrency: { group: pr-checks-${{ github.ref }}, cancel-in-progress: true }
+#   permissions: { contents: read }
+#   jobs:
+#     gate:
+#       uses: nothingfortune/workflows/.github/workflows/wp-pr-checks.yml@v1
+#       with:
+#         theme_path: web/app/themes/<theme-slug>
+#
+# Security note: this workflow does not consume any untrusted event input
+# (no PR title/body, issue body, branch name, commit message). All run:
+# blocks operate on repository files, fixed strings, or the inputs above.
+
+on:
+  workflow_call:
+    inputs:
+      php_version:
+        description: 'PHP version for the tests/composer-validate jobs (default: 8.2)'
+        type: string
+        required: false
+        default: '8.2'
+      php_syntax_versions:
+        description: 'JSON array of PHP versions for the php-syntax matrix (default: ["8.1","8.2","8.3"])'
+        type: string
+        required: false
+        default: '["8.1","8.2","8.3"]'
+      php_compat_versions:
+        description: 'JSON array of PHP versions for the php-compat matrix (default: ["8.3"])'
+        type: string
+        required: false
+        default: '["8.3"]'
+      node_version:
+        description: 'Node version for the JS/redirects jobs (default: 24)'
+        type: string
+        required: false
+        default: '24'
+      theme_path:
+        description: 'Path to the active theme, e.g. web/app/themes/<theme> (required, no default)'
+        type: string
+        required: true
+      run_e2e:
+        description: 'Whether the real-wp-e2e job runs (default: true)'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: PHPUnit + PHPCS + composer audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up PHP ${{ inputs.php_version }}
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          tools: composer
+          coverage: pcov # lightweight coverage driver for the informational unit-coverage report
+
+      - name: Cache Composer downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/composer
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        run: |
+          echo "::group::composer install"
+          composer install --no-interaction --no-progress
+          echo "::endgroup::"
+
+      - name: composer audit
+        run: |
+          echo "::group::composer audit"
+          set +e
+          composer audit --no-interaction | tee composer-audit.log
+          code=${PIPESTATUS[0]}
+          echo "::endgroup::"
+          # Exit code is a bitmask: bit 1 = security advisories, bit 2 = abandoned.
+          # Fail only on real advisories; abandoned packages are reported, not fatal.
+          if [ $(( code & 1 )) -ne 0 ]; then
+            echo "::error::Security advisories found in dependencies."
+            exit 1
+          fi
+          echo "No security advisories (abandoned packages reported only)."
+
+      - name: PHPCS (WordPress security sniffs)
+        run: |
+          echo "::group::phpcs"
+          vendor/bin/phpcs --report=full
+          echo "::endgroup::"
+
+      - name: PHPUnit (+ informational unit coverage)
+        run: |
+          set -o pipefail
+          echo "::group::phpunit"
+          # Coverage is INFORMATIONAL: no minimum threshold gates the build. It reports
+          # on the pure-logic seams in phpunit.xml's <source>.
+          # --coverage-text streams to stdout (reliable); tee captures it for the summary.
+          vendor/bin/phpunit --testsuite unit \
+            --coverage-text \
+            --coverage-clover=coverage-clover.xml | tee coverage.txt
+          echo "::endgroup::"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unit-coverage
+          path: |
+            coverage.txt
+            coverage-clover.xml
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "### PHPUnit + PHPCS + audit"
+            echo ""
+            echo "#### Unit coverage (pure-logic seams — informational, no threshold)"
+            echo '```'
+            # The per-file table + totals; trim the verbose header lines.
+            sed -n '/Code Coverage Report/,$p' coverage.txt 2>/dev/null | head -n 40 || echo "(coverage report unavailable)"
+            echo '```'
+            echo "#### composer audit"
+            echo '```'
+            cat composer-audit.log 2>/dev/null || echo "(audit log unavailable)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  composer-validate:
+    name: composer validate (--strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up PHP ${{ inputs.php_version }}
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          tools: composer
+          coverage: none
+
+      - name: Validate composer.json
+        run: |
+          set -o pipefail
+          echo "::group::composer validate --strict --no-check-publish"
+          composer validate --strict --no-check-publish 2>&1 | tee composer-validate.log
+          status=${PIPESTATUS[0]}
+          echo "::endgroup::"
+          exit "$status"
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "### composer validate"
+            echo ""
+            echo '```'
+            cat composer-validate.log 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation log on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: composer-validate-log
+          path: composer-validate.log
+          retention-days: 14
+
+  php-syntax:
+    # `php -l` across inputs.php_syntax_versions — proves our source parses across the
+    # supported range even though the unit toolchain itself may need a newer floor.
+    name: php -l (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ${{ fromJSON(inputs.php_syntax_versions) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Find PHP files
+        id: discover
+        run: |
+          # Exclude vendor/ and web/wp/ (both gitignored, but defensive).
+          mapfile -t files < <(find . \
+            -path ./vendor -prune -o \
+            -path ./web/wp -prune -o \
+            -path ./node_modules -prune -o \
+            -type f -name '*.php' -print)
+          printf '%s\n' "${files[@]}" > php-files.txt
+          echo "count=${#files[@]}" >> "$GITHUB_OUTPUT"
+          echo "Found ${#files[@]} PHP file(s)."
+
+      - name: Lint each PHP file
+        id: lint
+        run: |
+          set -o pipefail
+          : > lint-failures.log
+          failed=0
+          total=0
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            total=$((total + 1))
+            if ! out=$(php -l "$file" 2>&1); then
+              failed=$((failed + 1))
+              printf '%s\n' "$out" >> lint-failures.log
+            fi
+          done < php-files.txt
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+          echo "Linted $total file(s); $failed failure(s)."
+          test "$failed" -eq 0
+
+      - name: Write summary
+        if: always()
+        env:
+          LINT_TOTAL: ${{ steps.lint.outputs.total }}
+          LINT_FAILED: ${{ steps.lint.outputs.failed }}
+        run: |
+          {
+            echo "### php -l"
+            echo ""
+            echo "- Files scanned: **${LINT_TOTAL}**"
+            echo "- Failures: **${LINT_FAILED}**"
+            if [ -s lint-failures.log ]; then
+              echo ""
+              echo '```'
+              cat lint-failures.log
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload failure log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: php-lint-failures
+          path: lint-failures.log
+          retention-days: 14
+
+  redirects:
+    name: redirects.json (validate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node ${{ inputs.node_version }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Unit-test the redirects tool
+        run: |
+          echo "::group::redirects:test"
+          # Via the npm script (no deps needed — npm run only reads package.json).
+          npm run redirects:test
+          echo "::endgroup::"
+
+      - name: Validate config/redirects.json (+ the .example)
+        run: |
+          set -o pipefail
+          echo "::group::redirects check"
+          node scripts/redirects.mts check | tee redirects-check.log
+          node scripts/redirects.mts check --config config/redirects.json.example | tee -a redirects-check.log
+          echo "::endgroup::"
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "### redirects.json validation"
+            echo ""
+            echo '```'
+            cat redirects-check.log 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  theme-js:
+    name: theme JS (typecheck + drift + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node ${{ inputs.node_version }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+
+      # Only tsc + esbuild are needed here; skip the Playwright browser download.
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      # Fail the PR on any high/critical advisory in the JS dependency tree (incl.
+      # devDependencies). Mirrors `composer audit` for the PHP side. Moderate/low
+      # are reported, not fatal.
+      - name: Dependency audit (npm)
+        run: |
+          set -o pipefail
+          echo "::group::npm audit --audit-level=high"
+          npm audit --audit-level=high | tee npm-audit.log
+          echo "::endgroup::"
+
+      - name: Typecheck
+        run: |
+          echo "::group::type-check"
+          npm run type-check
+          echo "::endgroup::"
+
+      - name: JS unit tests
+        run: |
+          echo "::group::test:js"
+          npm run test:js
+          echo "::endgroup::"
+
+      # The caller-owned aggregate — customer suite names stay in the caller's
+      # package.json; this workflow only knows this one fixed entry point.
+      - name: CI test aggregate
+        run: |
+          echo "::group::test:ci"
+          npm run test:ci
+          echo "::endgroup::"
+
+      - name: Verify committed theme JS + CSS match source
+        env:
+          THEME_PATH: ${{ inputs.theme_path }}
+        run: |
+          set -o pipefail
+          echo "::group::rebuild + git diff"
+          npm run build:theme-js
+          if ! git diff --exit-code -- "${THEME_PATH}/assets/js/"; then
+            echo "::error::Committed ${THEME_PATH}/assets/js is stale. Run 'npm run build:theme-js' and commit the result."
+            exit 1
+          fi
+          npm run build:theme-css
+          # git status, not git diff: a NEW per-template sheet builds a NEW <name>.min.css that
+          # is untracked, which `git diff --exit-code` ignores — the resolver would then
+          # reference a file the deploy never ships.
+          if [ -n "$(git status --porcelain --untracked-files=all -- "${THEME_PATH}/assets/css/")" ]; then
+            git status --porcelain --untracked-files=all -- "${THEME_PATH}/assets/css/"
+            echo "::error::Committed ${THEME_PATH}/assets/css is stale or a built file is untracked. Run 'npm run build:theme-css' and commit ALL of assets/css."
+            exit 1
+          fi
+          echo "::endgroup::"
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "### theme JS (typecheck + drift + build freshness)"
+            echo ""
+            echo "\`npm run type-check\` passed, and the committed theme JS/CSS matched a fresh build."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  shell-tests:
+    name: bin/lib shell tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run bin/lib unit tests
+        run: |
+          set -o pipefail
+          echo "::group::tests/bin/run.sh"
+          bash tests/bin/run.sh 2>&1 | tee shell-tests.log
+          status=${PIPESTATUS[0]}
+          echo "::endgroup::"
+          exit "$status"
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "### bin/lib shell tests"
+            echo ""
+            echo '```'
+            cat shell-tests.log 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: WordPress core version (pin vs installed)
+        run: |
+          set -o pipefail
+          echo "::group::bin/version-check.sh"
+          bash bin/version-check.sh 2>&1 | tee core-version.log
+          status=${PIPESTATUS[0]}
+          echo "::endgroup::"
+          exit "$status"
+
+      - name: Write core-version summary
+        if: always()
+        run: |
+          {
+            echo "### WordPress core"
+            echo ""
+            echo "> A PR is built from the MERGE commit, so this is the core version this run"
+            echo "> actually tested against — which is the base branch's pin, not necessarily"
+            echo "> this branch's."
+            echo ""
+            echo '```'
+            cat core-version.log 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Repo hygiene (dead code · clones · date parsing · sanitizer coverage)
+        run: |
+          set -o pipefail
+          echo "::group::bin/repo-hygiene.sh"
+          bash bin/repo-hygiene.sh 2>&1 | tee hygiene.log
+          status=${PIPESTATUS[0]}
+          echo "::endgroup::"
+          exit "$status"
+
+      - name: Write hygiene summary
+        if: always()
+        run: |
+          {
+            echo "### Repo hygiene"
+            echo ""
+            echo '```'
+            cat hygiene.log 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  real-wp-e2e:
+    name: real-WP e2e (DDEV + Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # This is the most expensive job (boots DDEV + WordPress + browsers). Two cost guards:
+    #   1. Skip it entirely on push — the PR already gated the merge, and a deploy job
+    #      normally runs a live smoke against the deploy target afterward, so a post-merge
+    #      re-run here is pure duplication. It still runs on every PR (where it's required).
+    #   2. On docs-only PRs, the expensive steps below are individually skipped (the job
+    #      still reports success, keeping the required check satisfied).
+    # Skipped while the PR is a DRAFT — the caller's own pre-push hook is expected to have
+    # already run the same Playwright suite locally. Marking the PR ready runs it for real.
+    # `push` and `workflow_dispatch` have no pull_request context, so `draft` is null there
+    # and the condition passes — this only ever subtracts on drafts.
+    if: inputs.run_e2e && github.event_name != 'push' && github.event.pull_request.draft != true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Decide whether this PR touches anything e2e-relevant. A docs/markdown-only PR
+      # can't break runtime behavior, so we skip the DDEV boot but let the job pass green
+      # (a *skipped* required check would block the PR forever — hence step-level guards,
+      # not a job-level skip). Fail-safe: anything but pure docs → run the full e2e.
+      - name: Detect e2e-relevant changes
+        id: changes
+        run: |
+          code=true
+          base_ref="${{ github.base_ref }}"
+          if [ -n "${base_ref}" ]; then
+            git fetch --no-tags --depth=1 origin "${base_ref}" >/dev/null 2>&1 || true
+            files=$(git diff --name-only "origin/${base_ref}" HEAD 2>/dev/null || echo "")
+            if [ -n "${files}" ]; then
+              code=false
+              while IFS= read -r f; do
+                [ -z "${f}" ] && continue
+                case "${f}" in
+                  docs/*|*.md|LICENSE) : ;;  # docs/markdown — no runtime surface
+                  *) code=true ;;
+                esac
+              done <<< "${files}"
+            fi
+            echo "::group::changed files"; echo "${files}"; echo "::endgroup::"
+          fi
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          echo "e2e-relevant changes: ${code}"
+
+      # Official DDEV CI action (SHA-pinned), pinned to a real DDEV release. Installs
+      # DDEV, applies CI-safe global config (omit ssh-agent, no instrumentation), and
+      # runs `ddev start`. WordPress core isn't present yet — the site 404s until the
+      # composer install below — but the containers boot fine.
+      - name: Set up DDEV
+        if: steps.changes.outputs.code == 'true'
+        uses: ddev/github-action-setup-ddev@fdf2f5c97943bae638f31df6df86f1defa6210c0 # v1.12.1
+        with:
+          version: '1.25.3'
+          autostart: 'true'
+
+      - name: Capture DDEV version
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          # Extract the semver token (robust to extra trailing fields in `ddev --version`
+          # output, e.g. a build/platform suffix); fall back to "unknown" if it can't be parsed.
+          DDEV_VERSION="$(ddev --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+[^[:space:]]*' | head -1)"
+          echo "DDEV_VERSION=${DDEV_VERSION:-unknown}" >> "$GITHUB_ENV"
+
+      # DDEV derives its site URL from the project name (usually the checkout directory
+      # name), so a hardcoded <name>.ddev.site would break on any caller not named the
+      # same as the workflow's own dev repo. Ask the running DDEV instance for its own
+      # primary URL instead — works regardless of caller/project name.
+      - name: Resolve DDEV site URL
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          DEPLOY_URL="$(ddev describe -j | jq -r '.raw.primary_url')"
+          echo "DEPLOY_URL=${DEPLOY_URL}" >> "$GITHUB_ENV"
+          echo "resolved DEPLOY_URL=${DEPLOY_URL}"
+
+      - name: Install PHP deps + WP core (ddev composer install)
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          set -o pipefail
+          echo "::group::composer install"
+          ddev composer install --no-interaction --no-progress
+          echo "::endgroup::"
+
+      - name: Import CI database fixture
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          set -o pipefail
+          echo "::group::db import"
+          ddev wp db import tests/fixtures/ci-seed.sql
+          # Reconcile the fixture's db_version with the CI DDEV's WP core: an older dump would
+          # otherwise redirect logged-in admins to upgrade.php ("Database Update Required"),
+          # which breaks the authenticated admin-area Playwright spec.
+          ddev wp core update-db >/dev/null
+          # The dump carries whatever ddev.site origin was recorded when it was captured;
+          # re-assert home/siteurl defensively against the URL this run actually resolved.
+          ddev wp option update home "${DEPLOY_URL}" >/dev/null
+          ddev wp option update siteurl "${DEPLOY_URL}" >/dev/null
+          # Known admin creds for the authenticated Playwright spec(s). A local/CI test
+          # admin only — non-secret dev fixture.
+          ddev wp user update admin --user_pass=admin >/dev/null \
+            || ddev wp user create admin admin@example.test --role=administrator --user_pass=admin >/dev/null
+          # Content contracts: auto-seed feature-required content so CI matches what a deploy
+          # would self-heal — the seeders are the single source of truth, so a content-dependent
+          # spec never fails because the fixture predates a new contract. Idempotent; never
+          # overwrites the fixture's own values.
+          ddev wp content-seed >/dev/null || echo "::warning::content-seed reported a problem (see content-check)"
+          ddev wp cache flush >/dev/null || true
+          echo "::endgroup::"
+
+      - name: Sanity — live site returns 200
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -sk -o /dev/null -w '%{http_code}' "${DEPLOY_URL}/") || code=000
+            echo "attempt ${i}: HTTP ${code}"
+            [ "${code}" = "200" ] && break
+            sleep 3
+          done
+          if [ "${code}" != "200" ]; then
+            echo "::error::site did not return 200 at ${DEPLOY_URL}"
+            ddev logs 2>/dev/null | tail -80 || true
+            exit 1
+          fi
+
+      - name: PHP integration checks (booted WP)
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          set -o pipefail
+          echo "::group::wp eval-file tests/integration"
+          # The "missing middle": mu-plugin load, CPT/taxonomy registration, capability
+          # lockdown, paywall gate decision, immutable-infra constants — inside real WP.
+          # env-gates.php's local-GTM-render check needs a configured GTM_CONTAINER_ID (locally
+          # via .env.local); CI has no .env.local, so a dummy id is exported into the DDEV web
+          # container just for this step — it never reaches a browser (HTML inspection only).
+          ddev exec bash -c "GTM_CONTAINER_ID=GTM-CI0000 wp eval-file tests/integration/mu-plugins.php"
+          echo "::endgroup::"
+          echo "::group::wp drift-check (JSON contract + drift-free fixture)"
+          # The drift detector itself: must run, emit valid JSON, and exit 0 on the fixture
+          # (rule logic is unit-tested; this proves the CLI adapter end-to-end).
+          ddev wp drift-check --format=json | python3 -c 'import json,sys; json.load(sys.stdin)'
+          echo "::endgroup::"
+          echo "::group::wp eval-file tests/integration/consent.php (own process)"
+          # The consent contract runs as its OWN booted process, never inside the runner: it
+          # fires wp_head repeatedly (not idempotent) and stages settings states other
+          # contracts must not see. A separate eval-file = a separate WP boot, which is
+          # exactly the isolation those hazards need.
+          ddev wp eval-file tests/integration/consent.php
+          echo "::endgroup::"
+
+      - name: Set up Node ${{ inputs.node_version }}
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+
+      - name: Install JS deps
+        if: steps.changes.outputs.code == 'true'
+        run: npm ci
+
+      # Cache the downloaded browser binaries (~150MB for chromium) across runs, keyed on the
+      # Playwright version (package-lock) + browser scope. On a hit `playwright install` skips
+      # the download and only provisions OS deps — saves the biggest chunk of e2e setup time.
+      - name: Cache Playwright browsers
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ (vars.E2E_FULL_MATRIX == 'true' || github.actor == 'dependabot[bot]') && 'full' || 'chromium' }}-${{ hashFiles('package-lock.json') }}
+
+      # Chromium-only by default so the fast gate doesn't download/provision Firefox +
+      # WebKit it never runs. Full matrix (repo var E2E_FULL_MATRIX=true) installs every
+      # engine. `install` no-ops the download when the cache above restored the binaries;
+      # `--with-deps` still provisions OS libs (not cacheable).
+      - name: Install Playwright browsers
+        if: steps.changes.outputs.code == 'true'
+        env:
+          E2E_FULL_MATRIX: ${{ (vars.E2E_FULL_MATRIX == 'true' || github.actor == 'dependabot[bot]') && 'true' || 'false' }}
+        run: |
+          if [ "${E2E_FULL_MATRIX}" = "true" ]; then
+            npx playwright install --with-deps
+          else
+            npx playwright install --with-deps chromium
+          fi
+
+      # Browser scope is a flag: default is chromium-only (fast). Set the repo variable
+      # E2E_FULL_MATRIX=true (Settings → Actions → Variables) to run the full multi-browser
+      # matrix.
+      - name: Run Playwright e2e
+        if: steps.changes.outputs.code == 'true'
+        env:
+          E2E_FULL_MATRIX: ${{ (vars.E2E_FULL_MATRIX == 'true' || github.actor == 'dependabot[bot]') && 'true' || 'false' }}
+          # Test admin for the authenticated spec(s) seeded above. Its presence is what
+          # gates that spec.
+          WP_ADMIN_USER: admin
+          WP_ADMIN_PASS: admin
+        run: |
+          set -o pipefail
+          if [ "${E2E_FULL_MATRIX}" = "true" ]; then
+            echo "::group::playwright (full matrix — E2E_FULL_MATRIX=true)"
+            npm run test:e2e 2>&1 | tee playwright.log
+          else
+            echo "::group::playwright (chromium only — set repo var E2E_FULL_MATRIX=true for the full matrix)"
+            npx playwright test --project=chromium 2>&1 | tee playwright.log
+          fi
+          status=${PIPESTATUS[0]}
+          echo "::endgroup::"
+          exit "${status}"
+
+      - name: Write summary (skipped — docs-only PR)
+        if: always() && steps.changes.outputs.code != 'true'
+        run: |
+          {
+            echo "### real-WP e2e (DDEV + Playwright)"
+            echo ""
+            echo "⏭️ **Skipped** — this PR changes only docs/markdown, so the DDEV + Playwright"
+            echo "stack was not booted. The job passes green to satisfy the required check."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write summary
+        if: always() && steps.changes.outputs.code == 'true'
+        env:
+          E2E_FULL_MATRIX: ${{ (vars.E2E_FULL_MATRIX == 'true' || github.actor == 'dependabot[bot]') && 'true' || 'false' }}
+        run: |
+          if [ "${E2E_FULL_MATRIX}" = "true" ]; then
+            browsers="chromium, firefox, webkit, mobile-chrome, mobile-safari (full matrix)"
+          else
+            browsers="chromium only (set repo var \`E2E_FULL_MATRIX=true\` for the full matrix)"
+          fi
+          {
+            echo "### real-WP e2e (DDEV + Playwright)"
+            echo ""
+            echo "- DDEV: \`${DDEV_VERSION}\` · target: \`${DEPLOY_URL}\` · fixture: \`tests/fixtures/ci-seed.sql\`"
+            echo "- Browsers: ${browsers}"
+            echo ""
+            echo "See the **playwright-report** artifact for full output."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload HTML report
+        if: always() && steps.changes.outputs.code == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playwright-report-real-wp
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload failure traces and screenshots
+        if: failure() && steps.changes.outputs.code == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playwright-failures-real-wp
+          path: test-results/
+          retention-days: 14
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      # sha256 of gitleaks_8.30.1_linux_x64.tar.gz (from the release checksums.txt) — pin the
+      # BINARY, not just the version tag, so a compromised/retagged release can't run in CI.
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      # Fresh checkout, no deps installed — the working tree is exactly the tracked files,
+      # so the scan never trips over composer/npm/WP-core trees. Config allowlists the
+      # documented non-secret paths (.gitleaks.toml); a real committed key still fails.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run gitleaks (pinned + checksum-verified)
+        run: |
+          set -o pipefail
+          echo "::group::gitleaks ${GITLEAKS_VERSION}"
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tgz
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks
+          ./gitleaks detect --no-git --source . -c .gitleaks.toml --no-banner --redact
+          echo "::endgroup::"
+
+  php-compat:
+    # Forward-compat: run the full unit suite across inputs.php_compat_versions, in
+    # addition to the `tests` job's primary inputs.php_version.
+    name: PHPUnit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ${{ fromJSON(inputs.php_compat_versions) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress
+
+      - name: PHPUnit (unit suite)
+        run: vendor/bin/phpunit --testsuite unit

@@ -1,0 +1,238 @@
+name: WPE deploy (reusable)
+
+# Deploy orchestration for a WordPress/Bedrock repo to a WP Engine install:
+# checkout -> setup PHP -> configure SSH -> map install/environment -> build
+# and deploy (bin/deploy.sh) -> file an incident issue on failure -> five
+# post-deploy checks (HTTP reachability, PHP-error scan, security headers,
+# indexing posture, CI-content canary). Deploy LOGIC lives in the caller's
+# bin/ — this workflow only orchestrates it. PHP is fixed at 8.2 (this
+# workflow does not vary it).
+#
+# Caller contract — the repo must define:
+#   - bin/deploy.sh <dev|staging|production>
+#   - bin/lib/wpe-env.sh (the env-var contract this workflow's steps read)
+#   - bin/check-security-headers.sh <url> <github_environment>
+#   - bin/check-indexing-posture.sh <url> <hidden|visible>
+#   - bin/ci-content-canary.sh <url> <dev|staging|production>
+# Caller owns triggers, concurrency, and the vars.WPE_DEPLOY_ENABLED gate.
+# Caller's workflow/job permissions must grant at least contents: read,
+# issues: write — the incident-issue step needs issues: write.
+#
+# Caller (two variants; sequential-safe — each job has its own
+# install-scoped deploy lock server-side, so they can run in parallel):
+#   name: Deploy — variants (Gate 2)
+#   on:
+#     workflow_dispatch:
+#     push: { branches: [main] }
+#   concurrency: { group: deploy-variants, cancel-in-progress: false }
+#   permissions: { contents: read, issues: write }
+#   jobs:
+#     variant-a:
+#       if: ${{ vars.WPE_DEPLOY_ENABLED == 'true' }}
+#       uses: nothingfortune/workflows/.github/workflows/wpe-deploy.yml@v1
+#       with:
+#         install: ${{ vars.WPE_INSTALL_VARIANT_A }}
+#         active_theme: ${{ vars.WPE_ACTIVE_THEME }}
+#         require_plugins: ${{ vars.WPE_REQUIRE_PLUGINS }}
+#         display_tz: ${{ vars.WPE_DISPLAY_TZ }}
+#       secrets: inherit
+#     variant-b:
+#       if: ${{ vars.WPE_DEPLOY_ENABLED == 'true' }}
+#       uses: nothingfortune/workflows/.github/workflows/wpe-deploy.yml@v1
+#       with:
+#         install: ${{ vars.WPE_INSTALL_VARIANT_B }}
+#         active_theme: ${{ vars.WPE_ACTIVE_THEME }}
+#         require_plugins: ${{ vars.WPE_REQUIRE_PLUGINS }}
+#         display_tz: ${{ vars.WPE_DISPLAY_TZ }}
+#       secrets: inherit
+#
+# Security: the only privileged input is the SSH key secret, passed via env
+# (never interpolated into a run: line). No untrusted event input is used.
+
+on:
+  workflow_call:
+    inputs:
+      wp_env:
+        description: 'Deploy target passed positionally to bin/deploy.sh — dev|staging|production (default: dev)'
+        type: string
+        required: false
+        default: 'dev'
+      install:
+        description: 'WP Engine install name (required, no default)'
+        type: string
+        required: true
+      url:
+        description: 'Public URL of the install (default: empty, which derives https://<install>.wpengine.com)'
+        type: string
+        required: false
+        default: ''
+      github_environment:
+        description: 'GitHub Environment name for this job, also passed to bin/check-security-headers.sh (default: development)'
+        type: string
+        required: false
+        default: 'development'
+      active_theme:
+        description: 'Theme slug WordPress must have active post-deploy (required, no default)'
+        type: string
+        required: true
+      require_plugins:
+        description: 'Space-separated plugin slugs that must be active post-deploy (default: "secure-custom-fields co-authors-plus")'
+        type: string
+        required: false
+        default: 'secure-custom-fields co-authors-plus'
+      canonical_url:
+        description: 'Canonical URL to reconcile post-deploy, if any (default: empty)'
+        type: string
+        required: false
+        default: ''
+      display_tz:
+        description: 'Human-readable timezone name for deploy-log rendering; the UTC stamp stays the sortable key (default: UTC)'
+        type: string
+        required: false
+        default: 'UTC'
+      indexing_posture:
+        description: 'Expected indexing posture passed to bin/check-indexing-posture.sh — hidden|visible (default: hidden)'
+        type: string
+        required: false
+        default: 'hidden'
+    secrets:
+      WPE_SSH_KEY_PRIVATE:
+        required: true
+      QA_USER_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  deploy:
+    name: build + deploy to WP Engine
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+    timeout-minutes: 30
+    env:
+      WPE_ACTIVE_THEME: ${{ inputs.active_theme }}
+      WPE_REQUIRE_PLUGINS: ${{ inputs.require_plugins }}
+      WPE_CANONICAL_URL: ${{ inputs.canonical_url }}
+      WPE_DISPLAY_TZ: ${{ inputs.display_tz }}
+      QA_USER_PASSWORD: ${{ secrets.QA_USER_PASSWORD }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0   # build-wpe.sh stamps the git SHA into .release
+
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.2'
+          tools: composer
+          coverage: none
+
+      - name: Configure SSH for WP Engine
+        env:
+          WPE_KEY: ${{ secrets.WPE_SSH_KEY_PRIVATE }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$WPE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Every SSH/rsync call targets the SSH gateway (<install>.ssh.wpengine.net) with
+          # StrictHostKeyChecking=accept-new.
+
+      - name: Map install to deploy environment
+        env:
+          INSTALL: ${{ inputs.install }}
+          URL: ${{ inputs.url }}
+          WP_ENV: ${{ inputs.wp_env }}
+        run: |
+          url="${URL:-https://${INSTALL}.wpengine.com}"
+          case "$WP_ENV" in
+            dev)        i=WPE_INSTALL_DEV;     u=WPE_URL_DEV ;;
+            staging)    i=WPE_INSTALL_STAGING; u=WPE_URL_STAGING ;;
+            production) i=WPE_INSTALL_PROD;    u=WPE_URL_PROD
+                        echo "WPE_DEPLOY_CONFIRM=yes" >> "$GITHUB_ENV" ;;
+            *) echo "unknown wp_env: $WP_ENV" >&2; exit 1 ;;
+          esac
+          { echo "$i=$INSTALL"; echo "$u=$url"; echo "DEPLOY_URL=$url"; } >> "$GITHUB_ENV"
+
+      - name: Build and deploy
+        run: |
+          # ONE source of truth for "which site did we just deploy": the env-mapping step
+          # above, fed into bin/lib/wpe-env.sh's resolvers. bin/deploy.sh reads the same
+          # env this step does, so every post-deploy check below probes THIS install.
+          . bin/lib/wpe-env.sh
+          echo "deploying to $DEPLOY_URL"
+          ./bin/deploy.sh "${{ inputs.wp_env }}"
+
+      - name: File a deploy-incident issue
+        if: failure() && env.DEPLOY_INCIDENT == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # An incident does not self-resolve, so this issue stays open until a human closes it.
+          # It carries everything needed to diagnose without re-running anything.
+          body="$RUNNER_TEMP/incident.md"
+          {
+            echo "## The site broke on deploy"
+            echo
+            echo "**Environment:** ${{ inputs.wp_env }}"
+            echo "**Commit deployed:** \`${{ github.sha }}\`"
+            echo "**Rolled back:** ${DEPLOY_ROLLED_BACK:-0} (to \`${DEPLOY_LAST_GOOD:-none}\`; post-restore health confirmed: ${DEPLOY_ROLLBACK_CONFIRMED:-0})"
+            echo "**Byte check passed:** ${DEPLOY_BYTES_OK:-unknown}"
+            echo "**Baseline was clean:** ${DEPLOY_BASELINE_CLEAN:-unknown}"
+            echo "**Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+            echo "### Routes this deploy broke"
+            echo '```'
+            cat "$RUNNER_TEMP/deploy-incident-routes.txt" 2>/dev/null || echo "(none captured — the gate may have refused to judge; see the run log)"
+            echo '```'
+            echo
+            echo "### Runbook"
+            echo "- Rollback restores **files only** — it cannot undo database state (activation, home/siteurl, options)."
+            echo "- Restore by hand: \`./bin/rollback.sh ${{ inputs.wp_env }} [stamp]\` (with no arg, restores the last certified snapshot — the \`last-good\` marker; \`ls -1 <docroot>/_wpeprivate/snapshots\` over the gateway lists the others)."
+          } > "$body"
+          # Ensure the label exists — a fresh caller repo starts without it, and a create
+          # that fails on a missing label would lose the incident record at the exact moment
+          # there is an incident to record.
+          gh label create deploy-incident --description "A deploy broke the remote site" --color B60205 2>/dev/null || true
+          gh issue create \
+            --title "Deploy incident — ${{ inputs.wp_env }} — ${GITHUB_SHA:0:7}" \
+            --label deploy-incident \
+            --body-file "$body"
+
+      - name: Post-deploy smoke + security headers
+        run: |
+          echo "::group::HTTP check $DEPLOY_URL"
+          status=$(curl -sS -o /dev/null -w '%{http_code}' "$DEPLOY_URL")
+          echo "HTTP $status"
+          echo "::endgroup::"
+          case "$status" in 2*|3*) echo "Site reachable." ;; *) echo "::error::Site returned $status"; exit 1 ;; esac
+
+          echo "::group::PHP error scan"
+          body=$(curl -sS -A 'Mozilla/5.0' "$DEPLOY_URL")
+          if printf '%s' "$body" | grep -qiE 'fatal error|parse error'; then
+            echo "::error::PHP errors detected on page"; exit 1
+          fi
+          echo "clean"
+          echo "::endgroup::"
+
+          echo "::group::security headers $DEPLOY_URL"
+          # Guards the REAL deployed URL. Uses a browser UA so a Cloudflare-fronted URL
+          # isn't 403'd.
+          ./bin/check-security-headers.sh "$DEPLOY_URL" "${{ inputs.github_environment }}"
+          echo "::endgroup::"
+
+          echo "::group::indexing posture $DEPLOY_URL (${{ inputs.indexing_posture }})"
+          # Not an outage, but a WP_ENV mix-up quietly deindexes (prod) or indexes (dev/staging)
+          # the site — worse than an outage, because nobody notices for weeks. The script checks
+          # the X-Robots-Tag header AND a whole-line robots.txt Disallow.
+          ./bin/check-indexing-posture.sh "$DEPLOY_URL" "${{ inputs.indexing_posture }}"
+          echo "::endgroup::"
+
+          # CI-content canary: fixture scaffolding reaches an install via a content push or DB
+          # restore, never via this deploy — so it is probed on the LIVE site. Reports on dev
+          # (the fixture is SUPPOSED to be there); FAILS staging/production — readers must
+          # never see it.
+          echo "::group::CI-content canary (${{ inputs.wp_env }})"
+          ./bin/ci-content-canary.sh "$DEPLOY_URL" "${{ inputs.wp_env }}"
+          echo "::endgroup::"
