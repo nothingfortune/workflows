@@ -349,7 +349,22 @@ jobs:
         run: |
           set -o pipefail
           echo "::group::npm audit --audit-level=high"
-          npm audit --audit-level=high | tee npm-audit.log
+          # Retry ONLY transport failures (registry outages routinely fail this step for hours);
+          # a real advisory finding fails immediately — the retry never runs on vulnerability output.
+          for attempt in 1 2 3; do
+            if npm audit --audit-level=high | tee npm-audit.log; then
+              break
+            elif grep -qiE "network timeout|ENOTFOUND|ECONNRESET|ETIMEDOUT|audit endpoint returned an error|registry error" npm-audit.log; then
+              if [ "$attempt" = "3" ]; then
+                echo "::error::npm audit failed on a transport error after 3 attempts" >&2
+                exit 1
+              fi
+              echo "::warning::npm audit transport error (attempt $attempt) — retrying in $((attempt * 60))s"
+              sleep $((attempt * 60))
+            else
+              exit 1
+            fi
+          done
           echo "::endgroup::"
 
       - name: Typecheck
