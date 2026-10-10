@@ -14,7 +14,7 @@ name: e2e (reusable)
 #   concurrency: { group: e2e-${{ github.ref }}, cancel-in-progress: true }
 #   jobs:
 #     e2e:
-#       uses: nothingfortune/workflows/.github/workflows/e2e.yml@v1
+#       uses: nothingfortune/workflows/.github/workflows/e2e.yml@<sha> # v<X.Y.Z>
 
 on:
   workflow_call: {}

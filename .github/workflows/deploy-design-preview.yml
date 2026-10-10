@@ -14,7 +14,7 @@ name: Deploy design preview (reusable)
 #   concurrency: { group: design-preview-${{ github.ref }}, cancel-in-progress: true }
 #   jobs:
 #     deploy:
-#       uses: nothingfortune/workflows/.github/workflows/deploy-design-preview.yml@v1
+#       uses: nothingfortune/workflows/.github/workflows/deploy-design-preview.yml@<sha> # v<X.Y.Z>
 #       secrets: inherit
 #
 # Repo secrets required: CLOUDFLARE_API_TOKEN (Account > Cloudflare Pages >

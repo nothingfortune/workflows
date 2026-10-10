@@ -14,7 +14,7 @@ name: Docker image (reusable)
 #   permissions: { contents: read, packages: write }
 #   jobs:
 #     image:
-#       uses: nothingfortune/workflows/.github/workflows/docker-image.yml@<sha> # v1
+#       uses: nothingfortune/workflows/.github/workflows/docker-image.yml@<sha> # v<X.Y.Z>
 #       with:
 #         dockerfile: engine/capture/Dockerfile
 #         image_name: dollyvision-engine
