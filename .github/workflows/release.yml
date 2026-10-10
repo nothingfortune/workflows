@@ -1,0 +1,41 @@
+name: release
+
+# Every merge that changes a callable workflow cuts an immutable semver tag
+# and release and moves the major tag. Rules: README → Releases.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+# Queued, never cancelled: a cancelled run would leave its merge untagged.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # tags and history since the last release
+      - run: node --test scripts/next-version.test.mjs
+      - id: next
+        run: echo "tag=$(node scripts/next-version.mjs)" >> "$GITHUB_OUTPUT"
+      - if: steps.next.outputs.tag != ''
+        env:
+          TAG: ${{ steps.next.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          major="${TAG%%.*}"
+          git tag -a "$TAG" -m "$TAG"
+          git tag -f "$major"
+          git push origin "$TAG"
+          git push -f origin "refs/tags/$major"
+          gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
