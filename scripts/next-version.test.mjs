@@ -64,7 +64,7 @@ const ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.st
 
 function repo() {
   const root = mkdtempSync(path.join(tmpdir(), 'next-version-'));
-  const git = (...args) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: root, env: ENV, encoding: 'utf8' });
+  const git = (...args) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', ...args], { cwd: root, env: ENV, encoding: 'utf8' });
   const write = (file, text) => {
     mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
     writeFileSync(path.join(root, file), text);
@@ -102,5 +102,30 @@ test('CLI: deleting a callable workflow is a release, though the file is gone', 
   unlinkSync(path.join(r.root, '.github/workflows/ci.yml'));
   r.git('commit', '-qam', 'refactor: drop ci');
   assert.equal(r.run(), 'v1.0.1\n');
+  rmSync(r.root, { recursive: true, force: true });
+});
+
+test('CLI: removing workflow_call from a released workflow is still a release', () => {
+  const r = repo();
+  r.write('.github/workflows/ci.yml', 'on: push\n');
+  r.git('commit', '-qam', 'feat(ci)!: ci is no longer callable');
+  assert.equal(r.run(), 'v2.0.0\n');
+  rmSync(r.root, { recursive: true, force: true });
+});
+
+test('CLI: deleting a workflow that was never callable does not release', () => {
+  const r = repo();
+  unlinkSync(path.join(r.root, '.github/workflows/lint.yml'));
+  r.git('commit', '-qam', 'fix: drop lint');
+  assert.equal(r.run(), '');
+  rmSync(r.root, { recursive: true, force: true });
+});
+
+test('CLI: a commit already carrying a release tag prints it again, so a failed publish can be re-run', () => {
+  const r = repo();
+  r.write('.github/workflows/ci.yml', 'on:\n  workflow_call: { inputs: {} }\n');
+  r.git('commit', '-qam', 'feat: ci input');
+  r.git('tag', '-a', 'v1.1.0', '-m', 'v1.1.0');
+  assert.equal(r.run(), 'v1.1.0\n');
   rmSync(r.root, { recursive: true, force: true });
 });

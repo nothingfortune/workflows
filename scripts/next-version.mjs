@@ -1,7 +1,5 @@
 // Prints the next release tag for the commits since the last semver tag, or nothing; rules: README → Releases.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const NO_RELEASE = new Set(['docs', 'chore', 'ci', 'test', 'style']);
@@ -49,14 +47,21 @@ export function parseLog(out) {
 
 function main(root) {
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  // A commit already tagged is a release that may not have finished publishing; name it again.
+  const own = git('tag', '--points-at', 'HEAD').split('\n').find((t) => /^v\d+\.\d+\.\d+$/.test(t));
+  if (own) return void console.log(own);
   const lastTag = git('describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*.[0-9]*.[0-9]*').trim();
   const log = git('log', '--no-merges', '--format=%x1e%s%x1f%b%x1f', '--name-only', `${lastTag}..HEAD`);
-  // A deleted workflow file can no longer be read, so it counts as callable: deletion breaks callers.
-  const isCallable = (file) => {
-    if (!/^\.github\/workflows\/[^/]+\.ya?ml$/.test(file)) return false;
-    const abs = path.join(root, file);
-    return !existsSync(abs) || readFileSync(abs, 'utf8').includes('workflow_call');
+  const callableAt = (ref, file) => {
+    try {
+      return git('show', `${ref}:${file}`).includes('workflow_call');
+    } catch {
+      return false; // absent at that ref
+    }
   };
+  // Callable at the last release counts too: removing or deleting a pinned contract breaks callers.
+  const isCallable = (file) =>
+    /^\.github\/workflows\/[^/]+\.ya?ml$/.test(file) && (callableAt(lastTag, file) || callableAt('HEAD', file));
   const next = nextVersion(lastTag, parseLog(log), isCallable);
   if (next) console.log(next);
 }

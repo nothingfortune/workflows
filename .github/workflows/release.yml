@@ -25,17 +25,21 @@ jobs:
           fetch-depth: 0 # tags and history since the last release
       - run: node --test scripts/next-version.test.mjs
       - id: next
-        run: echo "tag=$(node scripts/next-version.mjs)" >> "$GITHUB_OUTPUT"
+        # Assigned first: under bash -e a crashing script fails the step instead of reading as "no release".
+        run: |
+          tag="$(node scripts/next-version.mjs)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - if: steps.next.outputs.tag != ''
         env:
           TAG: ${{ steps.next.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
+        # Each step skips work already done, so re-running a failed release finishes it.
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           major="${TAG%%.*}"
-          git tag -a "$TAG" -m "$TAG"
-          git tag -f "$major"
-          git push origin "$TAG"
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "$TAG"
+          git push origin "refs/tags/$TAG"
+          git tag -f "$major" "$TAG^{commit}"
           git push -f origin "refs/tags/$major"
-          gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
