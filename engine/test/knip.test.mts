@@ -1,28 +1,16 @@
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fixture, tempCopy } from './helpers.mts';
 import { AnalysisError, mapKnip, mergePasses, resolveKnip, runKnip } from '../src/knip.mts';
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const fixture = (n: string) => path.join(here, 'fixtures', n);
-const repoModules = path.resolve(here, '../../node_modules');
 
 function analyze(root: string) {
   return mergePasses(
     mapKnip(runKnip(root, { production: false }), 'default'),
     mapKnip(runKnip(root, { production: true }), 'production'),
   );
-}
-
-// Temp copies sit outside the repo, so link node_modules for knip resolution.
-function tempCopy(name: string): string {
-  const dir = mkdtempSync(path.join(tmpdir(), 'knip-fx-'));
-  cpSync(fixture(name), dir, { recursive: true });
-  symlinkSync(repoModules, path.join(dir, 'node_modules'), 'dir');
-  return dir;
 }
 
 test('every planted defect yields exactly one finding', () => {
