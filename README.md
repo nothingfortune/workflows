@@ -59,6 +59,7 @@ reading private repos in other orgs needs your token, not a workflow's.
 | Workflow                    | What it does                                                                                                          |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `ci.yml`                    | The gate: `npm ci` + `npm run check`, least-privilege.                                                                |
+| `scope.yml`                 | Doc-only classifier: outputs `doc_only` = `true`/`false`/`unknown`; callers gate jobs with `if:` and pick the fail direction.|
 | `e2e.yml`                   | Playwright vs the BUILT app; draft-skipped; dormant (no-op) until the repo has a `playwright.config.*`.               |
 | `deploy-design-preview.yml` | Static design suite → Cloudflare Pages; main = production, branches = previews; project auto-named `<repo>-design`.   |
 

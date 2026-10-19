@@ -50,3 +50,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: node --test scripts/fleet-report.test.mjs
+
+  # Runs scope.yml's classifier script against scratch repos with GitHub's default shell flags.
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: node --test scripts/scope.test.mjs
