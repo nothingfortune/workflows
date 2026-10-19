@@ -1,0 +1,14 @@
+{
+  "name": "@nothingfortune/workflows",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test 'scripts/*.test.mjs' 'engine/test/**/*.test.mts'",
+    "audit": "node scripts/audit-selftest.mjs && node scripts/audit-workflows.mjs .github/workflows",
+    "typecheck": "tsc -p .",
+    "check": "npm test && npm run audit"
+  },
+  "peerDependencies": { "knip": ">=6 <7" },
+  "devDependencies": { "@types/node": "^24", "knip": "6.41.0", "typescript": "6.0.3" }
+}

@@ -1,0 +1,41 @@
+name: Self
+
+# This repo's own gate: the same shared workflows consumers call, at this PR's version.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: "self-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    uses: ./.github/workflows/scope.yml
+
+  # !cancelled() keeps a failing scope job from skipping the gate.
+  check:
+    needs: scope
+    if: ${{ !cancelled() && needs.scope.outputs.doc_only != 'true' }}
+    uses: ./.github/workflows/ci.yml
+
+  # The required aggregate: fails unless the lane that should have run succeeded.
+  gate:
+    needs: [scope, check]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          DOC_ONLY: ${{ needs.scope.outputs.doc_only }}
+          CHECK: ${{ needs.check.result }}
+        run: |
+          echo "doc_only=$DOC_ONLY check=$CHECK"
+          if [ "$DOC_ONLY" != "true" ]; then
+            [ "$CHECK" = "success" ] || { echo "full gate did not succeed"; exit 1; }
+          fi

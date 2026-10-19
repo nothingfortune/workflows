@@ -14,3 +14,16 @@ updates:
     commit-message:
       # Never chore/ci: those types do not release, so the bump would never reach consumers.
       prefix: 'build(deps)'
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '04:00'
+      timezone: Etc/UTC
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      # chore does not release: dev-tool bumps must not cut a release.
+      prefix: 'chore(deps)'

@@ -34,8 +34,8 @@ The commit type sets the level:
 
 An unrecognised type errs toward releasing; deleting a callable workflow
 counts as touching it. The highest level among the commits wins. The rules
-are tested in `scripts/next-version.test.mjs`, which `lint.yml` and
-`release.yml` both run.
+are tested in `scripts/next-version.test.mjs`, which `npm run check` (via
+`self.yml`) and `release.yml` both run.
 
 Releases run one at a time. When merges land faster than releases finish,
 GitHub drops all but the newest waiting run, and that run releases every merge
@@ -91,13 +91,14 @@ secret when the caller is in another org.
   `DRAFT_SKIPPED_CHECK=e2e` so a draft-era skip can't ride into a merge.
 - Dormancy over deletion: workflows self-activate when a repo adopts the
   capability (Playwright config, design path) — fresh clones stay green.
+- This repo's own PRs run the shared workflows through `self.yml`.
 
 ## Security invariants
 
 These workflows run **with each consumer's secrets, inside each consumer's
 repo**. One bad commit here would land on every project at once, so the repo
-enforces seven structural invariants in CI (`lint.yml` →
-`security-invariants`). `actionlint` proves the YAML is *correct*; this proves
+enforces seven structural invariants in CI (`npm run audit`, run by
+`self.yml`). `actionlint` proves the YAML is *correct*; this proves
 it is *safe*.
 
 | Rule | Invariant | Why |
