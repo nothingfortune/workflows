@@ -9,15 +9,17 @@ import { fileURLToPath } from 'node:url';
 const WORKFLOW = path.join(path.dirname(fileURLToPath(import.meta.url)), '../.github/workflows/scope.yml');
 const ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
 
+const leadingSpaces = (l: string): number => l.length - l.trimStart().length;
+
 // The `run: |` block of the step with id `classify`, dedented: the exact script the job runs.
-function classifyScript() {
+function classifyScript(): string {
   const lines = readFileSync(WORKFLOW, 'utf8').split('\n');
   const start = lines.findIndex((l) => /^\s+- id: classify$/.test(l));
   const run = lines.findIndex((l, i) => i > start && /^\s+run: \|$/.test(l));
-  const indent = lines[run + 1].match(/^\s*/)[0].length;
+  const indent = leadingSpaces(lines[run + 1] ?? '');
   const body = [];
   for (const l of lines.slice(run + 1)) {
-    if (l.trim() !== '' && l.match(/^\s*/)[0].length < indent) break;
+    if (l.trim() !== '' && leadingSpaces(l) < indent) break;
     body.push(l.slice(indent));
   }
   return body.join('\n');
@@ -25,20 +27,20 @@ function classifyScript() {
 
 function repo() {
   const root = mkdtempSync(path.join(tmpdir(), 'scope-'));
-  const git = (...a) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', ...a], { cwd: root, env: ENV, encoding: 'utf8' });
+  const git = (...a: string[]): string => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', ...a], { cwd: root, env: ENV, encoding: 'utf8' });
   git('init', '-q', '-b', 'main');
   git('commit', '-q', '--allow-empty', '-m', 'base');
   const base = git('rev-parse', 'HEAD').trim();
-  const write = (f, t = 'x') => {
+  const write = (f: string, t = 'x'): void => {
     mkdirSync(path.dirname(path.join(root, f)), { recursive: true });
     writeFileSync(path.join(root, f), t);
   };
-  const commit = () => {
+  const commit = (): void => {
     git('add', '-A');
     git('commit', '-q', '-m', 'change');
   };
   // GitHub's default run shell for bash steps.
-  const classify = (BASE_SHA = base) => {
+  const classify = (BASE_SHA = base): { status: number | null; output: string } => {
     const outFile = path.join(root, '.git', 'gh-output');
     writeFileSync(outFile, '');
     const r = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', classifyScript()], {

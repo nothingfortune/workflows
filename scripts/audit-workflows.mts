@@ -11,10 +11,13 @@
 // Every rule below is a structural constraint that makes a class of leak
 // impossible to introduce without failing CI — not a style preference.
 //
-// Run: node scripts/audit-workflows.mjs [dir]   (exit 1 on any violation)
+// Run: node scripts/audit-workflows.mts [dir]   (exit 1 on any violation)
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+export type Finding = { file: string; rule: string; line: number; detail: string };
+type RunLine = { n: number; text: string };
 
 const SHA40 = /^[0-9a-f]{40}$/;
 // GITHUB_TOKEN is minted per-run by Actions, not a stored secret, so it needs
@@ -25,15 +28,15 @@ const AUTO_SECRETS = new Set(['GITHUB_TOKEN']);
  * `run:` (optionally `run: |`) and continues while lines are deeper-indented
  * or blank. Line-oriented on purpose: the questions here are "does this text
  * appear where it can execute", which survives YAML-shape changes. */
-function runBlocks(lines) {
-  const blocks = [];
+function runBlocks(lines: string[]): RunLine[][] {
+  const blocks: RunLine[][] = [];
   for (let i = 0; i < lines.length; i += 1) {
-    const m = /^(\s*)-?\s*run:\s*(.*)$/.exec(lines[i]);
+    const m = /^(\s*)-?\s*run:\s*(.*)$/.exec(lines[i] ?? '');
     if (!m) continue;
-    const indent = m[1].length;
-    const block = [{ n: i + 1, text: m[2] ?? '' }];
+    const indent = (m[1] ?? '').length;
+    const block: RunLine[] = [{ n: i + 1, text: m[2] ?? '' }];
     for (let j = i + 1; j < lines.length; j += 1) {
-      const line = lines[j];
+      const line = lines[j] ?? '';
       if (line.trim() === '') {
         block.push({ n: j + 1, text: '' });
         continue;
@@ -52,26 +55,27 @@ function runBlocks(lines) {
  * the earlier fixed-depth regex could mistake a job-level `secrets:`
  * pass-through for the declaration set (or miss a differently-indented real
  * one entirely). */
-function declaredSecrets(text) {
-  const out = new Set();
+function declaredSecrets(text: string): Set<string> {
+  const out = new Set<string>();
   const lines = text.split('\n');
   const wc = lines.findIndex((l) => /^\s*workflow_call:\s*$/.test(l));
   if (wc === -1) return out;
-  const wcIndent = lines[wc].length - lines[wc].trimStart().length;
+  const wcLine = lines[wc] ?? '';
+  const wcIndent = wcLine.length - wcLine.trimStart().length;
   for (let i = wc + 1; i < lines.length; i += 1) {
-    const line = lines[i];
+    const line = lines[i] ?? '';
     if (line.trim() === '') continue;
     const lead = line.length - line.trimStart().length;
     if (lead <= wcIndent) break; // left the workflow_call block
     if (!/^\s*secrets:\s*$/.test(line)) continue;
     const secIndent = lead;
     for (let j = i + 1; j < lines.length; j += 1) {
-      const inner = lines[j];
+      const inner = lines[j] ?? '';
       if (inner.trim() === '') continue;
       const innerLead = inner.length - inner.trimStart().length;
       if (innerLead <= secIndent) break;
       const m = /^\s*([A-Za-z0-9_]+):\s*$/.exec(inner);
-      if (m && innerLead === secIndent + 2) out.add(m[1]);
+      if (m?.[1] && innerLead === secIndent + 2) out.add(m[1]);
     }
     break;
   }
@@ -86,18 +90,18 @@ function declaredSecrets(text) {
 const SECRET_REF =
   /\$\{\{[^}]*?\bsecrets\s*(?:\.\s*([A-Za-z0-9_]+)|\[\s*['"]([A-Za-z0-9_]+)['"]\s*\])/gi;
 
-function secretRefs(text) {
-  const refs = [];
+function secretRefs(text: string): { name: string; index: number }[] {
+  const refs: { name: string; index: number }[] = [];
   for (const m of text.matchAll(SECRET_REF)) {
-    refs.push({ name: m[1] ?? m[2], index: m.index });
+    refs.push({ name: m[1] ?? m[2] ?? '', index: m.index });
   }
   return refs;
 }
 
-export function auditFile(name, text) {
-  const findings = [];
+export function auditFile(name: string, text: string): Finding[] {
+  const findings: Finding[] = [];
   const lines = text.split('\n');
-  const add = (rule, line, detail) => findings.push({ file: name, rule, line, detail });
+  const add = (rule: string, line: number, detail: string): number => findings.push({ file: name, rule, line, detail });
 
   // INV-1 — pull_request_target runs with a WRITE token against a fork's code.
   // Combined with a checkout of the PR head it is the classic total compromise.
@@ -115,7 +119,7 @@ export function auditFile(name, text) {
   lines.forEach((l, i) => {
     const m = /^\s*-?\s*uses:\s*([^\s#]+)/.exec(l);
     if (!m) return;
-    const ref = m[1];
+    const ref = m[1] ?? '';
     if (ref.startsWith('./')) return; // local composite
     const at = ref.lastIndexOf('@');
     if (at === -1) return add('INV-2 unpinned action', i + 1, `${ref} has no ref`);
@@ -195,13 +199,13 @@ export function auditFile(name, text) {
   return findings;
 }
 
-export function auditDir(dir) {
+export function auditDir(dir: string): Finding[] {
   return readdirSync(dir)
     .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
     .flatMap((f) => auditFile(f, readFileSync(join(dir, f), 'utf8')));
 }
 
-const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop());
+const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop() ?? '');
 if (isMain) {
   const dir = process.argv[2] ?? '.github/workflows';
   const findings = auditDir(dir);

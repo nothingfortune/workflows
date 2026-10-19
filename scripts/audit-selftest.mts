@@ -9,10 +9,10 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { auditDir, auditFile } from './audit-workflows.mjs';
+import { auditDir, auditFile } from './audit-workflows.mts';
 
 const FIXTURES = join(import.meta.dirname, 'fixtures');
-const EXPECT = {
+const EXPECT: Record<string, string> = {
   'inv1-pr-target.yml': 'INV-1',
   'inv2-unpinned.yml': 'INV-2',
   'inv3-secret-in-run.yml': 'INV-3',
@@ -32,11 +32,11 @@ const EXPECT = {
 };
 
 let failed = 0;
-const fail = (msg) => {
+const fail = (msg: string): void => {
   console.error(`  ✗ ${msg}`);
   failed += 1;
 };
-const ok = (msg) => console.log(`  ✓ ${msg}`);
+const ok = (msg: string): void => console.log(`  ✓ ${msg}`);
 
 console.log('negative fixtures — the auditor must CATCH each violation:');
 const files = readdirSync(FIXTURES).filter((f) => f.endsWith('.yml'));
