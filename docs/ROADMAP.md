@@ -16,7 +16,7 @@ this page in the PR that finishes a phase.
 | --- | --- |
 | Automatic semver releases on merge; caller snippets pin release SHAs | #10 |
 | Job timeouts, grouped action bumps, caller snippets that parse | #14 (v1.1.2) |
-| Fleet report (`scripts/fleet-report.mjs`) | #15 (v1.2.0) |
+| Fleet report (`scripts/fleet-report.mts`) | #15 (v1.2.0) |
 | Shared doc-only classifier (`scope.yml`), fail-closed on a failing diff | #15 (v1.2.0) |
 | base: knip production pass (test-only modules) and inline annotations | base#27 |
 | Fleet standards spec and requirements | #16 |

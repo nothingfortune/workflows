@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { auditRepo, classifyRef, needsAttention, parseCalls, parseRemoteTags, render, sortReleases } from './fleet-report.mjs';
+import { auditRepo, classifyRef, needsAttention, parseCalls, parseRemoteTags, render, sortReleases } from './fleet-report.mts';
+import type { RepoResult } from './fleet-report.mts';
 
-const SHA = (c) => c.repeat(40);
+const SHA = (c: string): string => c.repeat(40);
 const RELEASES = sortReleases([
   { tag: 'v1.1.0', sha: SHA('b') },
   { tag: 'v1', sha: SHA('c') },
   { tag: 'v1.10.0', sha: SHA('d') },
   { tag: 'v1.2.0', sha: SHA('c') },
 ]);
-const call = (wf, ref, comment = '') => `    uses: nothingfortune/workflows/.github/workflows/${wf}@${ref}${comment}\n`;
+const call = (wf: string, ref: string, comment = ''): string => `    uses: nothingfortune/workflows/.github/workflows/${wf}@${ref}${comment}\n`;
 
 test('releases sort numerically and drop the moving major tag', () => {
   assert.deepEqual(RELEASES.map((r) => r.tag), ['v1.10.0', 'v1.2.0', 'v1.1.0']);
@@ -53,7 +54,7 @@ test('a caller file under another name is not a copy', () => {
 });
 
 test('render lists calls, copies, repos with no calls and unread repos', () => {
-  const results = [
+  const results: RepoResult[] = [
     { repo: 'o/a', ...auditRepo({ 'ci.yml': call('ci.yml', SHA('b')) }, ['ci.yml'], RELEASES) },
     { repo: 'o/b', ...auditRepo({ 'e2e.yml': 'jobs: {}\n' }, ['e2e.yml'], RELEASES) },
     { repo: 'o/c', calls: [], copies: [], error: 'HTTP 403' },

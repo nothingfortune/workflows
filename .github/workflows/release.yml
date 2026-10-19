@@ -26,11 +26,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: '.nvmrc'
-      - run: node --test scripts/next-version.test.mjs
+      - run: node --test scripts/next-version.test.mts
       - id: next
         # Assigned first: under bash -e a crashing script fails the step instead of reading as "no release".
         run: |
-          tag="$(node scripts/next-version.mjs)"
+          tag="$(node scripts/next-version.mts)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - if: steps.next.outputs.tag != ''
         env:

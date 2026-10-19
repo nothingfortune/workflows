@@ -16,7 +16,7 @@ unclassified SHA-to-SHA bump that always waits for a human.
 ## Releases
 
 Releases are automatic. On every push to `main`, `release.yml` runs
-`scripts/next-version.mjs` over the commits since the last semver tag and,
+`scripts/next-version.mts` over the commits since the last semver tag and,
 when a release is due, tags it, moves the major tag and publishes the release
 with generated notes.
 
@@ -34,7 +34,7 @@ The commit type sets the level:
 
 An unrecognised type errs toward releasing; deleting a callable workflow
 counts as touching it. The highest level among the commits wins. The rules
-are tested in `scripts/next-version.test.mjs`, which `npm run check` (via
+are tested in `scripts/next-version.test.mts`, which `npm run check` (via
 `self.yml`) and `release.yml` both run.
 
 Releases run one at a time. When merges land faster than releases finish,
@@ -44,7 +44,7 @@ an older release republishes it but leaves `v1` on the newest release.
 
 ## Fleet report
 
-`node scripts/fleet-report.mjs` reads every non-archived source repo in
+`node scripts/fleet-report.mts` reads every non-archived source repo in
 `nothingfortune` and `hestiamediagroup` (or each `--owner` you pass) with your
 `gh` login and prints a table. It shows each call to a shared workflow, the
 release it pins, and whether that release is current, behind, unpinned
@@ -114,8 +114,8 @@ it is *safe*.
 Run locally:
 
 ```bash
-node scripts/audit-selftest.mjs          # proves the auditor can fail
-node scripts/audit-workflows.mjs .github/workflows
+node scripts/audit-selftest.mts          # proves the auditor can fail
+node scripts/audit-workflows.mts .github/workflows
 ```
 
 `scripts/fixtures/` holds one deliberately-broken workflow per invariant. The

@@ -4,10 +4,10 @@
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
-    "test": "node --test 'scripts/*.test.mjs' 'engine/test/**/*.test.mts'",
-    "audit": "node scripts/audit-selftest.mjs && node scripts/audit-workflows.mjs .github/workflows",
+    "test": "node --test 'scripts/*.test.mts' 'engine/test/**/*.test.mts'",
+    "audit": "node scripts/audit-selftest.mts && node scripts/audit-workflows.mts .github/workflows",
     "typecheck": "tsc -p .",
-    "check": "npm test && npm run audit"
+    "check": "npm run typecheck && npm test && npm run audit"
   },
   "peerDependencies": { "knip": ">=6 <7" },
   "devDependencies": { "@types/node": "^24", "knip": "6.41.0", "typescript": "6.0.3" }

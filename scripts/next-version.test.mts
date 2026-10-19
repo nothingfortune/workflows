@@ -6,11 +6,12 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { bump, nextVersion, parseLog } from './next-version.mjs';
+import { bump, nextVersion, parseLog } from './next-version.mts';
+import type { Commit } from './next-version.mts';
 
 const CALLABLE = '.github/workflows/ci.yml';
-const isCallable = (f) => f === CALLABLE;
-const c = (subject, files = [CALLABLE], body = '') => ({ subject, body, files });
+const isCallable = (f: string): boolean => f === CALLABLE;
+const c = (subject: string, files = [CALLABLE], body = ''): Commit => ({ subject, body, files });
 
 test('feat on a callable workflow is a minor release', () => {
   assert.equal(nextVersion('v1.1.1', [c('feat(ci): new input')], isCallable), 'v1.2.0');
@@ -33,7 +34,7 @@ test('docs, chore, ci, test and style never release', () => {
 });
 
 test('a feat that touches no callable workflow does not release', () => {
-  assert.equal(nextVersion('v1.1.1', [c('feat: auditor rule', ['scripts/audit-workflows.mjs', '.github/workflows/lint.yml'])], isCallable), null);
+  assert.equal(nextVersion('v1.1.1', [c('feat: auditor rule', ['scripts/audit-workflows.mts', '.github/workflows/lint.yml'])], isCallable), null);
 });
 
 test('the highest level across commits wins, in any order', () => {
@@ -59,13 +60,13 @@ test('parseLog splits subject, body and files per commit', () => {
   ]);
 });
 
-const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'next-version.mjs');
+const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'next-version.mts');
 const ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
 
 function repo() {
   const root = mkdtempSync(path.join(tmpdir(), 'next-version-'));
-  const git = (...args) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', ...args], { cwd: root, env: ENV, encoding: 'utf8' });
-  const write = (file, text) => {
+  const git = (...args: string[]): string => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', ...args], { cwd: root, env: ENV, encoding: 'utf8' });
+  const write = (file: string, text: string): void => {
     mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
     writeFileSync(path.join(root, file), text);
   };
