@@ -11,11 +11,13 @@ name: Deploy design preview (reusable)
 #   on:
 #     push: { paths: ['docs/designs/handoff/**'] }
 #     workflow_dispatch:
-#   concurrency: { group: design-preview-${{ github.ref }}, cancel-in-progress: true }
+#   concurrency: { group: "design-preview-${{ github.ref }}", cancel-in-progress: true }
 #   jobs:
 #     deploy:
 #       uses: nothingfortune/workflows/.github/workflows/deploy-design-preview.yml@<sha> # v<X.Y.Z>
-#       secrets: inherit
+#       secrets:
+#         CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+#         CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 #
 # Repo secrets required: CLOUDFLARE_API_TOKEN (Account > Cloudflare Pages >
 # Edit), CLOUDFLARE_ACCOUNT_ID.

@@ -32,7 +32,7 @@ name: WP PR checks (reusable)
 #     pull_request: { branches: [main], types: [opened, synchronize, reopened, ready_for_review] }
 #     push: { branches: [main] }
 #     workflow_dispatch:
-#   concurrency: { group: "pr-checks-${{ github.ref }}", cancel-in-progress: true }
+#   concurrency: { group: "pr-checks-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}", cancel-in-progress: true }
 #   permissions: { contents: read }
 #   jobs:
 #     gate:

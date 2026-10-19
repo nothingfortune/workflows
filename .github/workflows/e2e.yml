@@ -11,7 +11,7 @@ name: e2e (reusable)
 #   on:
 #     push: { branches: [main] }
 #     pull_request: { types: [opened, synchronize, reopened, ready_for_review] }
-#   concurrency: { group: e2e-${{ github.ref }}, cancel-in-progress: true }
+#   concurrency: { group: "e2e-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}", cancel-in-progress: true }
 #   jobs:
 #     e2e:
 #       uses: nothingfortune/workflows/.github/workflows/e2e.yml@<sha> # v<X.Y.Z>

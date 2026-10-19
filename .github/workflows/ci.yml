@@ -4,7 +4,7 @@ name: CI (reusable)
 #
 #   name: CI
 #   on: { push: { branches: [main] }, pull_request: }
-#   concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }
+#   concurrency: { group: "ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}", cancel-in-progress: true }
 #   jobs:
 #     check:
 #       uses: nothingfortune/workflows/.github/workflows/ci.yml@<sha> # v<X.Y.Z>

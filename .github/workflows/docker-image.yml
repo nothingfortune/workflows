@@ -10,7 +10,7 @@ name: Docker image (reusable)
 #     pull_request: { paths: ['engine/**'] }
 #     push: { branches: [main], paths: ['engine/**'] }
 #     workflow_dispatch:
-#   concurrency: { group: engine-image-${{ github.ref }}, cancel-in-progress: true }
+#   concurrency: { group: "engine-image-${{ github.ref }}", cancel-in-progress: true }
 #   permissions: { contents: read, packages: write }
 #   jobs:
 #     image:

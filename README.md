@@ -58,15 +58,17 @@ there (they stay current with the workflow). The shape:
 ```yaml
 name: CI
 on: { push: { branches: [main] }, pull_request: }
-concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }
+# PRs cancel their superseded runs; every push to main gets its own group.
+concurrency: { group: "ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}", cancel-in-progress: true }
 jobs:
   check:
     uses: nothingfortune/workflows/.github/workflows/ci.yml@<sha> # v<X.Y.Z>
 ```
 
 Callers own **triggers** and **concurrency**; this repo owns the jobs.
-The Cloudflare workflow additionally needs `secrets: inherit` and the two
-repo secrets named in its header.
+The Cloudflare workflow additionally needs the two repo secrets named in its
+header, passed explicitly: `secrets: inherit` is rejected for a required
+secret when the caller is in another org.
 
 ## Conventions carried by these workflows
 
