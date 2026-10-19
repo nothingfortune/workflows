@@ -71,7 +71,7 @@ export function workflowPaths(text) {
             const keyIndent = m[1].length;
             while (idx + 1 < lines.length) {
                 const next = lines[idx + 1];
-                if (next.trim() !== '' && next.length - next.trimStart().length < keyIndent)
+                if (next.trim() !== '' && next.length - next.trimStart().length <= keyIndent)
                     break;
                 idx++;
                 if (next.trim() === '' || next.trim().startsWith('#'))
@@ -98,10 +98,13 @@ function readJson(root, name) {
         throw new AnalysisError(`${name} is not valid JSON: ${e.message}`);
     }
 }
+function cleanEnv() {
+    return Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+}
 // Build outputs like dist/ are absent from a checkout; a non-git root skips nothing.
 function isIgnored(root, p) {
     try {
-        execFileSync('git', ['check-ignore', '-q', '--', p], { cwd: root, stdio: 'ignore' });
+        execFileSync('git', ['check-ignore', '-q', '--', p], { cwd: root, stdio: 'ignore', env: cleanEnv() });
         return true;
     }
     catch {

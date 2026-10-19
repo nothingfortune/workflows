@@ -71,7 +71,7 @@ export function workflowPaths(text: string): { path: string; line: number; via: 
       const keyIndent = (m[1] as string).length;
       while (idx + 1 < lines.length) {
         const next = lines[idx + 1] as string;
-        if (next.trim() !== '' && next.length - next.trimStart().length < keyIndent) break;
+        if (next.trim() !== '' && next.length - next.trimStart().length <= keyIndent) break;
         idx++;
         if (next.trim() === '' || next.trim().startsWith('#')) continue;
         for (const p of interpreterPaths(next)) out.push({ path: p, line: idx + 1, via });
@@ -93,10 +93,14 @@ function readJson(root: string, name: string): unknown {
   }
 }
 
+function cleanEnv(): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+}
+
 // Build outputs like dist/ are absent from a checkout; a non-git root skips nothing.
 function isIgnored(root: string, p: string): boolean {
   try {
-    execFileSync('git', ['check-ignore', '-q', '--', p], { cwd: root, stdio: 'ignore' });
+    execFileSync('git', ['check-ignore', '-q', '--', p], { cwd: root, stdio: 'ignore', env: cleanEnv() });
     return true;
   } catch {
     return false;

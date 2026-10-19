@@ -111,3 +111,29 @@ test('a script named like the package name is located at its own line', () => {
   });
   assert.equal(checkReferences(root)[0]?.line, 4);
 });
+
+test('a run block ends at the run key column; sibling keys are not commands', () => {
+  const text = [
+    'steps:',
+    '  - run: |',
+    '      node in.js',
+    '    env:',
+    '      X: node sib.js',
+    '  - run: >-',
+    '      bash in2.sh',
+    '    working-directory: node d.js',
+    '  - name: n',
+    '    run: |',
+    '      node in3.js',
+    '    shell: bash e.sh',
+    '',
+  ].join('\n');
+  assert.deepEqual(
+    workflowPaths(text).map((w) => [w.path, w.line]),
+    [
+      ['in.js', 3],
+      ['in2.sh', 7],
+      ['in3.js', 11],
+    ],
+  );
+});
