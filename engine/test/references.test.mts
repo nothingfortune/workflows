@@ -137,3 +137,15 @@ test('a run block ends at the run key column; sibling keys are not commands', ()
     ],
   );
 });
+
+test('a callable workflow skips run: paths but still checks uses: ./', () => {
+  const callable = ['on:', '  workflow_call:', 'jobs:', '  j:', '    steps:', '      - run: node gone.js', '      - uses: ./.github/actions/gone', ''].join('\n');
+  const plain = callable.replace('  workflow_call:', '  push:');
+  const root = tmpProject({ '.github/workflows/lib.yml': callable, '.github/workflows/ci.yml': plain });
+  const found = checkReferences(root).map((f) => [f.file, f.symbol]);
+  assert.deepEqual(found, [
+    ['.github/workflows/ci.yml', 'gone.js'],
+    ['.github/workflows/ci.yml', '.github/actions/gone'],
+    ['.github/workflows/lib.yml', '.github/actions/gone'],
+  ]);
+});
