@@ -15,6 +15,7 @@ permissions:
 jobs:
   actionlint:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.7 -color
@@ -28,6 +29,7 @@ jobs:
   # on the runner and the auditor has zero dependencies.
   security-invariants:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: node scripts/audit-selftest.mjs
@@ -36,6 +38,7 @@ jobs:
   # release.yml trusts next-version.mjs to decide what consumers receive; test it before it decides.
   release-rules:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: node --test scripts/next-version.test.mjs
