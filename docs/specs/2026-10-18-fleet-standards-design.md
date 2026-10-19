@@ -492,26 +492,23 @@ integrity engine, F-phases fleet monitoring.
 
 Covers every active TypeScript repo. In order of recent activity:
 dollyVision (in I2), sawdustAtlas, meridianCore, azeronMappings,
-silentCartographer, sovereignWard, then the `ur-cdt` repos atlasAdmin and
-jarvis-ur-ops-automation.
+silentCartographer, sovereignWard.
 - **Exclusions:**
   - outerReach adopts through feature-map's PR sequence (§6.7).
   - fleetDemo follows outerReach, because it is a copy of it.
-  - JarvisAutomation is superseded by jarvis-ur-ops-automation.
+  - JarvisAutomation is superseded.
+  - The `ur-cdt` org is out of scope for this fleet entirely (user ruling,
+    2026-10-18). That covers atlasAdmin and jarvis-ur-ops-automation.
 - **Each adoption PR:**
   - adds or adjusts `knip.json` with `!` production entries;
   - adds `integrity.json`;
   - commits a generated baseline;
   - wires `integrity check` into the repo's gate. Most of these repos
-    have no `check` script: jarvis uses `validate`, and several run their
-    own CI steps. The integrity script goes into whatever single command
+    have no `check` script, and several run their own CI steps. The integrity script goes into whatever single command
     the repo's CI runs, and where there is none, the PR creates `check`.
 - Its `fleet.json` profile is updated in the same week.
 - **Accept when:** the fleet report shows the repo's engine pin as
   current and its baseline size.
-- **Access caveat:** the `ur-cdt` repos are not visible to the user's
-  current `gh` login (2026-10-18). Until that is fixed, the fleet report
-  cannot read them and the F3 App needs installing there too.
 
 **F1 — Fleet profiles** (`fleet.json`, `--propose`, exact "missing",
 unclassified repos).
@@ -576,8 +573,7 @@ findings answer it.
 **Still open:**
 
 - **The fleet GitHub App for F3.** It must be created by an admin of
-  `nothingfortune`, `hestiamediagroup` and `ur-cdt` and installed
-  read-only on all three. If administration read is refused anywhere, F2
+  `nothingfortune` and `hestiamediagroup` and installed read-only on both. If administration read is refused anywhere, F2
   reports branch protection for that org under "not read".
 
 **Calls made here, for the user to check:**
