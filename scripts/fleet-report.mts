@@ -10,10 +10,10 @@ const DEFAULT_OWNERS = ['nothingfortune', 'hestiamediagroup'];
 const USES = new RegExp(`^[ \\t]*(?:-[ \\t]+)?uses:[ \\t]*['"]?${REPO}/\\.github/workflows/([\\w.-]+\\.ya?ml)@([\\w.-]+)`, 'gm');
 
 export type Release = { tag: string; sha: string };
-export type Status = 'current' | 'behind' | 'unpinned' | 'unreleased';
+type Status = 'current' | 'behind' | 'unpinned' | 'unreleased';
 export type Classified = { status: Status; release: string | null; behind: number | null };
 export type Call = { workflow: string; ref: string };
-export type FoundCall = Call & Classified & { file: string };
+type FoundCall = Call & Classified & { file: string };
 export type RepoResult = { repo: string; calls: FoundCall[]; copies: string[]; error?: string };
 
 // Every `uses:` of a shared workflow in one caller file.
