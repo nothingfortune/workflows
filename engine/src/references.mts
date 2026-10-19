@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { makeFinding } from './finding.mts';
@@ -52,20 +53,33 @@ function unquote(value: string): string {
   return v.length > 1 && /^["']/.test(v) && v.endsWith(v[0] as string) ? v.slice(1, -1) : v;
 }
 
+const BLOCK_SCALAR = /^[|>][+-]?$/;
+
 export function workflowPaths(text: string): { path: string; line: number; via: 'run' | 'uses' }[] {
   const out: { path: string; line: number; via: 'run' | 'uses' }[] = [];
-  text.split('\n').forEach((raw, idx) => {
-    if (raw.trim().startsWith('#')) return;
-    const m = /^\s*(?:-\s+)?(run|uses):\s*(.*)$/.exec(raw);
-    if (!m) return;
-    const via = m[1] as 'run' | 'uses';
-    const value = unquote((m[2] as string).replace(/\s+#.*$/, ''));
+  const lines = text.split('\n');
+  for (let idx = 0; idx < lines.length; idx++) {
+    const raw = lines[idx] as string;
+    if (raw.trim().startsWith('#')) continue;
+    const m = /^(\s*(?:-\s+)?)(run|uses):\s*(.*)$/.exec(raw);
+    if (!m) continue;
+    const via = m[2] as 'run' | 'uses';
+    const value = unquote((m[3] as string).replace(/\s+#.*$/, ''));
     if (via === 'uses') {
       if (value.startsWith('./')) out.push({ path: value.slice(2).replace(/\/$/, ''), line: idx + 1, via });
-      return;
+    } else if (BLOCK_SCALAR.test(value)) {
+      const keyIndent = (m[1] as string).length;
+      while (idx + 1 < lines.length) {
+        const next = lines[idx + 1] as string;
+        if (next.trim() !== '' && next.length - next.trimStart().length < keyIndent) break;
+        idx++;
+        if (next.trim() === '' || next.trim().startsWith('#')) continue;
+        for (const p of interpreterPaths(next)) out.push({ path: p, line: idx + 1, via });
+      }
+    } else {
+      for (const p of interpreterPaths(value)) out.push({ path: p, line: idx + 1, via });
     }
-    for (const p of interpreterPaths(value)) out.push({ path: p, line: idx + 1, via });
-  });
+  }
   return out;
 }
 
@@ -79,8 +93,19 @@ function readJson(root: string, name: string): unknown {
   }
 }
 
-function lineOf(text: string, needle: string): number | undefined {
-  const i = text.split('\n').findIndex((l) => l.includes(needle));
+// Build outputs like dist/ are absent from a checkout; a non-git root skips nothing.
+function isIgnored(root: string, p: string): boolean {
+  try {
+    execFileSync('git', ['check-ignore', '-q', '--', p], { cwd: root, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function lineOf(text: string, needle: string, after = 0): number | undefined {
+  const lines = text.split('\n');
+  const i = lines.findIndex((l, n) => n >= after && l.includes(needle));
   return i < 0 ? undefined : i + 1;
 }
 
@@ -102,10 +127,12 @@ function checkScripts(root: string): Finding[] {
   if (!pkg?.scripts || typeof pkg.scripts !== 'object') return [];
   const text = readFileSync(path.join(root, 'package.json'), 'utf8');
   const out: Finding[] = [];
+  const start = Math.max(0, (lineOf(text, '"scripts"') ?? 1) - 1);
   for (const [name, command] of Object.entries(pkg.scripts)) {
     if (typeof command !== 'string') continue;
     for (const p of scriptPaths(command)) {
-      if (!existsSync(path.join(root, p))) out.push(missing('package.json', p, `package.json scripts.${name}`, lineOf(text, `"${name}"`)));
+      if (existsSync(path.join(root, p)) || isIgnored(root, p)) continue;
+      out.push(missing('package.json', p, `package.json scripts.${name}`, lineOf(text, `"${name}"`, start)));
     }
   }
   return out;
@@ -123,9 +150,9 @@ function checkWorkflows(root: string): Finding[] {
     const rel = `.github/workflows/${name}`;
     for (const ref of workflowPaths(readFileSync(path.join(dir, name), 'utf8'))) {
       const abs = path.join(root, ref.path);
-      const ok =
-        ref.via === 'uses' ? existsSync(path.join(abs, 'action.yml')) || existsSync(path.join(abs, 'action.yaml')) : existsSync(abs);
-      if (!ok) out.push(missing(rel, ref.path, `workflow ${ref.via}:`, ref.line));
+      const isAction = ref.via === 'uses' && !/\.ya?ml$/.test(ref.path);
+      const ok = isAction ? existsSync(path.join(abs, 'action.yml')) || existsSync(path.join(abs, 'action.yaml')) : existsSync(abs);
+      if (!ok && !isIgnored(root, ref.path)) out.push(missing(rel, ref.path, `workflow ${ref.via}:`, ref.line));
     }
   }
   return out;
@@ -143,7 +170,7 @@ function checkKnip(root: string): Finding[] {
       if (typeof v !== 'string') continue;
       const p = v.replace(/!$/, '');
       if (p.startsWith('!') || /[*?{}[\]()]/.test(p)) continue;
-      if (!existsSync(path.join(root, p))) out.push(missing('knip.json', p, `knip.json ${key}`, lineOf(text, v)));
+      if (!existsSync(path.join(root, p)) && !isIgnored(root, p)) out.push(missing('knip.json', p, `knip.json ${key}`, lineOf(text, v)));
     }
   }
   return out;

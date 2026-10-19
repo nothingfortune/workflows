@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -47,7 +48,7 @@ test("a flag's path argument is still a path", () => {
 });
 
 test('a workflow run line and a local action are checked; comments are not', () => {
-  const found = checkReferences(fixture).filter((f) => f.file.startsWith('.github/'));
+  const found = checkReferences(fixture).filter((f) => f.file === '.github/workflows/ci.yml');
   assert.deepEqual(
     found.map((f) => [f.symbol, f.line, f.evidence[0]]),
     [
@@ -81,4 +82,32 @@ test('invalid JSON in package.json or knip.json is an AnalysisError naming the f
     () => checkReferences(tmpProject({ 'knip.json': '{' })),
     (e) => e instanceof AnalysisError && /knip\.json/.test(e.message),
   );
+});
+
+test('run block scalars and local reusable workflows are checked', () => {
+  const found = checkReferences(fixture).filter((f) => f.file === '.github/workflows/blocks.yml');
+  assert.deepEqual(
+    found.map((f) => [f.symbol, f.line, f.evidence[0]]),
+    [
+      ['.github/scripts/block-gone.sh', 10, 'workflow run:'],
+      ['.github/workflows/gone.yml', 12, 'workflow uses:'],
+    ],
+  );
+});
+
+test('git-ignored build output is not REF-003; other missing paths still are', () => {
+  const root = tmpProject({
+    'package.json': '{"scripts":{"start":"node dist/index.js","bad":"node gone/index.js"}}',
+    '.gitignore': 'dist/\n',
+  });
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+  execFileSync('git', ['init', '-q'], { cwd: root, env });
+  assert.deepEqual(checkReferences(root).map((f) => f.symbol), ['gone/index.js']);
+});
+
+test('a script named like the package name is located at its own line', () => {
+  const root = tmpProject({
+    'package.json': '{\n  "name": "test",\n  "scripts": {\n    "test": "node gone.js"\n  }\n}\n',
+  });
+  assert.equal(checkReferences(root)[0]?.line, 4);
 });
