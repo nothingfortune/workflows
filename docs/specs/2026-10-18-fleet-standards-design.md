@@ -1,7 +1,7 @@
 # Fleet Standards: Code Integrity and Monitoring — Design
 
 **Date:** 2026-10-18
-**Status:** Draft for review. Not built. Decisions still open are in §11.
+**Status:** Draft for review. Not built. The user's rulings of 2026-10-18 are in §11.
 **Home:** `nothingfortune/workflows` (this repo), which owns shared CI.
 **Sources:**
 - [`2026-10-18-code-integrity-requirements.md`](2026-10-18-code-integrity-requirements.md),
@@ -159,7 +159,7 @@ The engine is a substantial program: adapters, an extractor, baseline logic
 and renderers. It has to run at the version the project pinned, and the
 same way locally as in CI (principle 2).
 
-**Recommended: a pinned package that the project's own `check` runs.**
+**Ruled: a pinned package that the project's own `check` runs.**
 
 - **How it ships:** a public git dependency pinned by commit SHA, with
   committed `dist/`. This is feature-map's ruling (its §11): Node will not
@@ -173,7 +173,7 @@ same way locally as in CI (principle 2).
   the plan must verify that Dependabot opens PRs for a SHA-pinned GitHub
   dependency. If it does not, pin to a semver tag ref (`#v1.2.0`) instead.
 
-**Alternative: a reusable `integrity.yml` here that checks out its own
+**Rejected: a reusable `integrity.yml` here that checks out its own
 repo.**
 
 - A reusable workflow cannot read its own ref from the `github` context,
@@ -187,6 +187,25 @@ repo.**
 **Small logic stays inline in shared workflows,** the way `scope.yml`
 does, with tests that extract and run the `run:` block
 (`scripts/scope.test.mjs`).
+
+**Where the package lives (ruled): in this repo.**
+
+- npm installs a GitHub dependency from the repo root only, so the root
+  `package.json` names the package and `files` limits it to `engine/`
+  (source and committed `dist/`). Consumers install
+  `github:nothingfortune/workflows#<sha>`.
+- **One version stream.** `release.yml` releases when a callable workflow
+  *or* `engine/**` changes. A consumer's workflow pins and engine pin
+  then point at the same release, and the fleet report checks both
+  against the same tags.
+- **Accepted costs:**
+  - Each release reaches each consumer as two Dependabot PRs (GitHub
+    Actions and npm), even when only one side changed.
+  - A breaking engine change is a major release for workflow callers too.
+- `lint.yml` gains the engine's tests and a check that `dist/` matches a
+  fresh build.
+- feature-map's planned separate repo is superseded. Its core lives in
+  `engine/` as well (§6.7).
 
 ### 5.2 Components
 
@@ -353,7 +372,7 @@ The same graph rules evaluate both. There is no second rule engine.
 
 There is one core. The edge format, the graph rules, the baseline and the
 findings layer specified here *are* the core that feature-map §11 calls for.
-They are built once, in the repo chosen in §11 decision 2.
+They are built once, in this repo's `engine/` (§5.1).
 
 - **Edges.** The shared core owns the `edges.json` schema. This design
   uses feature-map's fields (source, target, kind, line, resolved) and
@@ -418,8 +437,9 @@ Each phase ships on its own and has acceptance criteria. I-phases are the
 integrity engine, F-phases fleet monitoring.
 
 **I0 — Package and delivery spike.**
-- Create the engine repo (§11, decision 2) with a `check` CLI that wraps
-  knip's two passes and exits 0, 1 or 2.
+- Add `engine/` and the root `package.json` to this repo, with a `check`
+  CLI that wraps knip's two passes and exits 0, 1 or 2.
+- Extend `next-version.mjs` and its tests so `engine/**` changes release.
 - Install it in base by SHA.
 - Accept when:
   - base's `check` runs it;
@@ -441,7 +461,7 @@ integrity engine, F-phases fleet monitoring.
   - the summary appears in the step summary and `report.json` validates
     against its schema.
 
-**I2 — Baseline and suppressions; first ratchet adopter.**
+**I2 — Baseline and suppressions; first adopter with existing debt.**
 - Accept when:
   - in base's fixtures, a new finding fails, a stale baseline entry
     fails, and an expired or unmatched suppression fails;
@@ -468,6 +488,31 @@ integrity engine, F-phases fleet monitoring.
   - with a `features.json`, a platform→feature edge fails;
   - `--sarif` output uploads cleanly in base's public repo.
 
+**A — Fleet adoption** (after I2; one small PR per repo).
+
+Covers every active TypeScript repo. In order of recent activity:
+dollyVision (in I2), sawdustAtlas, meridianCore, azeronMappings,
+silentCartographer, sovereignWard, then the `ur-cdt` repos atlasAdmin and
+jarvis-ur-ops-automation.
+- **Exclusions:**
+  - outerReach adopts through feature-map's PR sequence (§6.7).
+  - fleetDemo follows outerReach, because it is a copy of it.
+  - JarvisAutomation is superseded by jarvis-ur-ops-automation.
+- **Each adoption PR:**
+  - adds or adjusts `knip.json` with `!` production entries;
+  - adds `integrity.json`;
+  - commits a generated baseline;
+  - wires `integrity check` into the repo's gate. Most of these repos
+    have no `check` script: jarvis uses `validate`, and several run their
+    own CI steps. The integrity script goes into whatever single command
+    the repo's CI runs, and where there is none, the PR creates `check`.
+- Its `fleet.json` profile is updated in the same week.
+- **Accept when:** the fleet report shows the repo's engine pin as
+  current and its baseline size.
+- **Access caveat:** the `ur-cdt` repos are not visible to the user's
+  current `gh` login (2026-10-18). Until that is fixed, the fleet report
+  cannot read them and the F3 App needs installing there too.
+
 **F1 — Fleet profiles** (`fleet.json`, `--propose`, exact "missing",
 unclassified repos).
 - Accept when: removing a declared shared workflow from a test fixture
@@ -483,7 +528,7 @@ unclassified repos).
   - a repo the App cannot read appears under "not read";
   - the run fails if the App token is missing.
 
-**Suggested order:** I0, I1, F1, I2, I3, F2, F3, I4. F1 comes early
+**Suggested order:** I0, I1, F1, I2, A, I3, F2, F3, I4. F1 comes early
 because "forgot to port it" is the stated pain, and exact "missing"
 findings answer it.
 
@@ -517,23 +562,23 @@ findings answer it.
 - The internal module layout of the engine and of the fleet report.
 - Fixture design.
 
-## 11. Open decisions (the user's)
+## 11. Decisions
 
-1. **Delivery (§5.1).** Recommended: a pinned package run by each
-   project's `check`. The alternative is a reusable workflow that needs
-   `id-token: write` in every caller and a separate path for local runs.
-2. **Engine home.** Recommended: one new public repo holding the integrity
-   engine *and* the feature-map core, because they share the extractor,
-   edges, graph rules and baseline.
-   - feature-map already planned a separate public package repo,
-     `nothingfortune/feature-map`; this would be that repo, named for both
-     jobs.
-   - This repo stays home to the workflows and the fleet report.
-   - The alternative is putting the package in this repo. That mixes two
-     release streams under one release rule.
-3. **Warnings block by default** (§6.1). Recommended: yes, matching base's
-   zero-tolerance knip today, with the baseline as the release valve for
-   older repos.
+**Ruled by the user, 2026-10-18:**
+
+1. **Delivery:** a pinned package run by each project's `check` (§5.1).
+2. **Engine home:** inside this repo. The user prefers fewer repos; the
+   costs are recorded in §5.1.
+3. **Warnings block by default** (§6.1). Older repos adopt with a
+   baseline that can only shrink.
+4. **Adoption:** every active TypeScript repo (§8, phase A).
+
+**Still open:**
+
+- **The fleet GitHub App for F3.** It must be created by an admin of
+  `nothingfortune`, `hestiamediagroup` and `ur-cdt` and installed
+  read-only on all three. If administration read is refused anywhere, F2
+  reports branch protection for that org under "not read".
 
 **Calls made here, for the user to check:**
 
