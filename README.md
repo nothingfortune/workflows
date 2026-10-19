@@ -56,6 +56,78 @@ copy that has stopped getting fixes, and repos that call nothing.
 `--strict` exits 1 when anything needs attention. It runs locally because
 reading private repos in other orgs needs your token, not a workflow's.
 
+## Integrity engine
+
+`integrity check` finds broken references, dead code and import cycles in a
+consumer repo. It runs the repo's own knip twice, once in the default mode and
+once with `--production`, and adds its own check for paths that do not exist.
+It writes `build/integrity/report.json`. In GitHub Actions it also appends a
+step summary and emits `::error`, `::warning` and `::notice` annotations. The
+engine is built from `engine/src/` into the committed `engine/dist/`, and
+`npm run build:check` fails when the two differ.
+
+`integrity check --root <dir>` analyzes another directory. The engine needs
+knip `>=6 <7` installed in the consumer (it is a peer dependency) and Node 22
+or newer.
+
+### Rules
+
+| Rule | Finds | Severity |
+| --- | --- | --- |
+| REF-001 | A broken reference (an import that does not resolve) | error |
+| REF-002 | An unlisted dependency | error |
+| REF-003 | A path that does not exist, named in a `package.json` script, a `knip.json` `entry` or `project`, or a workflow `run:` or `uses: ./` line | error |
+| DEAD-001 | An orphaned file | warning |
+| DEAD-002 | An unused export | warning |
+| DEAD-003 | An unused dependency | warning |
+| DEAD-004 | A disconnected file | warning |
+| CYC-001 | A circular dependency | warning |
+
+REF-003 skips git-ignored build output. Confidence (high for every rule except
+REF-003, which is medium) is reported but never decides whether a finding
+blocks. In `enforce` mode errors and warnings block and info never does.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Pass, or `observe` mode |
+| `1` | Blocking findings |
+| `2` | Analysis failure, invalid config, or an unknown knip issue type |
+
+### Adoption
+
+1. Add the engine to `devDependencies` and a script. Pin the commit SHA:
+
+   ```json
+   {
+     "scripts": { "integrity": "integrity check" },
+     "devDependencies": { "@nothingfortune/workflows": "github:nothingfortune/workflows#<sha>" }
+   }
+   ```
+
+2. Put `npm run integrity` in your `check` script in place of `knip`.
+3. Keep `knip.json`. Mark production entries with `!` (for example
+   `"src/main.ts!"`) so the `--production` pass sees them.
+4. Git-ignore `build/`, where the report is written.
+
+Dependabot should bump the pin like any other dependency. That is expected but
+not yet confirmed: it is verified after the first release that carries the
+engine.
+
+### Modes
+
+By default the engine runs in `enforce` mode. To report without failing, add
+an `integrity.json` at the repo root:
+
+```json
+{ "mode": "observe" }
+```
+
+`observe` never blocks, so the exit code is `0`, except that the conditions
+behind exit code `2` still exit `2`. The only keys allowed are `$schema` and
+`mode`; anything else is an invalid config.
+
 ## The workflows
 
 | Workflow                    | What it does                                                                                                          |
