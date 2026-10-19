@@ -8,8 +8,8 @@
   "scripts": {
     "test": "node --test 'scripts/*.test.mts' 'engine/test/**/*.test.mts'",
     "audit": "node scripts/audit-selftest.mts && node scripts/audit-workflows.mts .github/workflows",
-    "build": "tsc -p engine",
-    "build:check": "npm run build && git diff --exit-code -- engine/dist",
+    "build": "rm -rf engine/dist && tsc -p engine && chmod +x engine/dist/bin/integrity.mjs",
+    "build:check": "npm run build && { out=$(git status --porcelain -- engine/dist); [ -z \"$out\" ] || { echo \"engine/dist is out of date or uncommitted:\"; echo \"$out\"; exit 1; }; }",
     "typecheck": "tsc -p .",
     "check": "npm run typecheck && npm test && npm run audit && npm run build:check"
   },
