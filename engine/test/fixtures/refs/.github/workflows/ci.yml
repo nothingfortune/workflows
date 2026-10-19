@@ -1,0 +1,11 @@
+name: ci
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/local
+      - run: node scripts/real.mjs
+      - run: bash .github/scripts/gone.sh
+      - uses: ./.github/actions/missing
+      # run: bash nope.sh

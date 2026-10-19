@@ -1,0 +1,5 @@
+name: local
+description: fixture
+runs:
+  using: composite
+  steps: []

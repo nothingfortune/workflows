@@ -1,0 +1,9 @@
+{
+  "name": "refs-fixture",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/real.mjs && bash bin/gone.sh && npm run x",
+    "lint": "eslint --config ./eslint.config.js .",
+    "ok": "bash bin/real.sh"
+  }
+}
