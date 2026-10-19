@@ -283,15 +283,13 @@ The fixture is analyzed with the knip from this repo's `node_modules`. `resolveK
 
 - [ ] **Step 1: Write the failing tests:**
   - `'a script naming a missing file is REF-003; real files and npm run are not'`: `scriptPaths('node scripts/real.mjs && bash bin/gone.sh && npm run x')` deep-equals `['scripts/real.mjs', 'bin/gone.sh']`. Over the `refs` fixture, `checkReferences` reports exactly one script finding, `symbol: 'bin/gone.sh'`.
-  - `'flags, evals, variables, globs, URLs and quoted spans are not paths'`: each of these gives `[]`:
+  - `'evals, variables, globs, URLs and quoted spans are not paths'`: each of these gives `[]`:
     - `node -e "require('./x.js')"`
     - `bash -c 'scripts/a.sh'`
     - `bash $DIR/x.sh`
     - `node scripts/*.mjs`
     - `curl https://e.com/a.js`
-    - `eslint --config ./eslint.config.js .`
-
-    The last one has a flag argument that is a real path; it is still a path when it exists, so assert `scriptPaths('eslint --config ./eslint.config.js .')` deep-equals `['./eslint.config.js']` and the fixture creates it.
+  - `'a flag's path argument is still a path'`: `scriptPaths('eslint --config ./eslint.config.js .')` deep-equals `['./eslint.config.js']`.
   - `'a workflow run line and a local action are checked; comments are not'`: the fixture `ci.yml` has:
     - `run: bash .github/scripts/gone.sh` (finding, line 9);
     - `run: node scripts/real.mjs` (no finding);
@@ -321,7 +319,7 @@ The fixture is analyzed with the knip from this repo's `node_modules`. `resolveK
   - `export function loadConfig(root): { mode: 'enforce'|'observe' }`.
     - A missing `integrity.json` gives `{ mode: 'enforce' }`.
     - Invalid JSON, an unknown key, or a `mode` outside the two values throws `AnalysisError('integrity.json: <reason>')`. In I1 the only allowed keys are `$schema` and `mode`; later plans add keys.
-  - `export function engineVersion(root): string`. It reads the consumer's `package-lock.json` → `packages["node_modules/@nothingfortune/workflows"].resolved` and returns the 40-hex SHA after `#`. It returns `'unknown'` when absent, and `'dev'` when `root` is this repo.
+  - `export function engineVersion(root): string`. It reads the consumer's `package-lock.json` → `packages["node_modules/@nothingfortune/workflows"].resolved` and returns the 40-hex SHA after `#`. It returns `'unknown'` when absent, and `'dev'` when the `package.json` in `root` is named `@nothingfortune/workflows`.
   - `export function evaluate(findings, mode): { blocking: Finding[], result: 'pass'|'fail', exitCode: 0|1 }`.
 
 - [ ] **Step 1: Write the failing tests:**
@@ -397,8 +395,8 @@ The fixture is analyzed with the knip from this repo's `node_modules`. `resolveK
   - actionlint 1.7.7.
 
   Then `node scripts/next-version.mjs` prints a minor release (`v1.3.0` if nothing else released first).
-- [ ] **Step 3:** Open the PR, address review threads (Codex) and merge with a merge commit after the user approves. Confirm the release run published the tag and moved `v1`.
-- [ ] **Step 4: Commit** `docs(engine): adoption and rules in the README`, before Step 3's PR.
+- [ ] **Step 3: Commit** `docs(engine): adoption and rules in the README`.
+- [ ] **Step 4:** Open the PR, address review threads (Codex) and merge with a merge commit after the user approves. Confirm the release run published the tag and moved `v1`.
 
 ---
 
