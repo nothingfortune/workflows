@@ -6,11 +6,24 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = 'nothingfortune/workflows';
 const DEFAULT_OWNERS = ['nothingfortune', 'hestiamediagroup'];
-const USES = new RegExp(`uses:\\s*${REPO}/\\.github/workflows/([\\w.-]+\\.ya?ml)@([\\w.-]+)`, 'g');
+// Anchored to a line start so a commented-out `# uses:` is not a call.
+const USES = new RegExp(`^[ \\t]*(?:-[ \\t]+)?uses:[ \\t]*['"]?${REPO}/\\.github/workflows/([\\w.-]+\\.ya?ml)@([\\w.-]+)`, 'gm');
 
 // Every `uses:` of a shared workflow in one caller file.
 export function parseCalls(text) {
   return [...text.matchAll(USES)].map((m) => ({ workflow: m[1], ref: m[2] }));
+}
+
+// `git ls-remote --tags` output → [{ tag, sha }], each annotated tag peeled to its commit.
+export function parseRemoteTags(out) {
+  const peeled = new Map();
+  for (const line of out.split('\n').filter(Boolean)) {
+    const [sha, ref] = line.split('\t');
+    const tag = ref.replace('refs/tags/', '');
+    if (tag.endsWith('^{}')) peeled.set(tag.slice(0, -3), sha);
+    else if (!peeled.has(tag)) peeled.set(tag, sha);
+  }
+  return [...peeled].map(([tag, sha]) => ({ tag, sha }));
 }
 
 // tags: [{ tag, sha }] for vX.Y.Z only; newest first.
@@ -93,16 +106,8 @@ function main(argv) {
   const owners = argv.filter((a, i) => argv[i - 1] === '--owner');
   const strict = argv.includes('--strict');
   const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8' });
-  git('fetch', '-q', '--tags', '--force', 'origin');
-  // show-ref -d lists an annotated tag twice (tag object, then its commit as tag^{}); keep the commit.
-  const peeled = new Map();
-  for (const line of git('show-ref', '--tags', '-d').split('\n').filter(Boolean)) {
-    const [sha, ref] = line.split(' ');
-    const tag = ref.replace('refs/tags/', '');
-    if (tag.endsWith('^{}')) peeled.set(tag.slice(0, -3), sha);
-    else if (!peeled.has(tag)) peeled.set(tag, sha);
-  }
-  const releases = sortReleases([...peeled].map(([tag, sha]) => ({ tag, sha })));
+  // Releases come from the remote, so a tag that exists only in this checkout cannot pose as one.
+  const releases = sortReleases(parseRemoteTags(git('ls-remote', '--tags', 'origin')));
   const shared = readdirSync(path.join(root, '.github/workflows')).filter((f) =>
     readFileSync(path.join(root, '.github/workflows', f), 'utf8').includes('workflow_call'),
   );

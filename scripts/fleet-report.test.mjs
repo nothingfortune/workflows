@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { auditRepo, classifyRef, needsAttention, parseCalls, render, sortReleases } from './fleet-report.mjs';
+import { auditRepo, classifyRef, needsAttention, parseCalls, parseRemoteTags, render, sortReleases } from './fleet-report.mjs';
 
 const SHA = (c) => c.repeat(40);
 const RELEASES = sortReleases([
@@ -71,4 +71,23 @@ test('only a fully current fleet needs no attention', () => {
   const behind = [{ repo: 'o/a', ...auditRepo({ 'ci.yml': call('ci.yml', SHA('b')) }, ['ci.yml'], RELEASES) }];
   assert.equal(needsAttention(behind), true);
   assert.equal(needsAttention([{ repo: 'o/c', calls: [], copies: [], error: 'x' }]), true);
+});
+
+test('a commented-out call is not a call, so the same-named file still reads as a copy', () => {
+  const text = `#   uses: nothingfortune/workflows/.github/workflows/ci.yml@${SHA('d')} # v1.10.0\njobs:\n  check:\n    runs-on: ubuntu-latest\n`;
+  assert.deepEqual(parseCalls(text), []);
+  assert.deepEqual(auditRepo({ 'ci.yml': text }, ['ci.yml'], RELEASES).copies, ['ci.yml']);
+});
+
+test('a step-form and a quoted call both count', () => {
+  const text = `      - uses: nothingfortune/workflows/.github/workflows/ci.yml@v1\n    uses: 'nothingfortune/workflows/.github/workflows/e2e.yml@${SHA('d')}'\n`;
+  assert.deepEqual(parseCalls(text).map((c) => c.workflow), ['ci.yml', 'e2e.yml']);
+});
+
+test('remote tags peel annotated tags to their commit', () => {
+  const out = `${SHA('1')}\trefs/tags/v1\n${SHA('2')}\trefs/tags/v1.1.2\n${SHA('3')}\trefs/tags/v1.1.2^{}\n`;
+  assert.deepEqual(parseRemoteTags(out), [
+    { tag: 'v1', sha: SHA('1') },
+    { tag: 'v1.1.2', sha: SHA('3') },
+  ]);
 });
