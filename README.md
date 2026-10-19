@@ -37,6 +37,11 @@ counts as touching it. The highest level among the commits wins. The rules
 are tested in `scripts/next-version.test.mjs`, which `lint.yml` and
 `release.yml` both run.
 
+Releases run one at a time. When merges land faster than releases finish,
+GitHub drops all but the newest waiting run, and that run releases every merge
+since the last tag as one version. The major tag only moves forward: re-running
+an older release republishes it but leaves `v1` on the newest release.
+
 ## The workflows
 
 | Workflow                    | What it does                                                                                                          |
