@@ -5,7 +5,10 @@ export function normalizePath(p) {
     if (posix.startsWith('/') || /^[A-Za-z]:/.test(posix) || posix.split('/').includes('..')) {
         throw new Error(`${p} is outside the repo`);
     }
-    return posix.replace(/^(\.\/)+/, '');
+    return posix
+        .split('/')
+        .filter((seg) => seg !== '' && seg !== '.')
+        .join('/');
 }
 export function fingerprint(ruleId, file, symbol, expression) {
     return createHash('sha256')

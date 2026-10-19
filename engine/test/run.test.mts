@@ -50,8 +50,18 @@ test('observe mode exits 0 but still reports', () => {
   });
 });
 
-test('an analysis failure exits 2 and writes no report', () => {
+test('run reports the cycle fixture as one CYC-001', () => {
+  withCopy('knip-cycle', (dir) => {
+    const r = run({ root: dir, env: {} });
+    assert.equal(r.exitCode, 1);
+    assert.deepEqual(r.report?.counts, { 'CYC-001': 1 });
+  });
+});
+
+test('an analysis failure exits 2 and removes a stale report', () => {
   withCopy('knip-clean', (dir) => {
+    assert.equal(run({ root: dir, env: {} }).exitCode, 0);
+    assert.equal(existsSync(reportPath(dir)), true);
     writeFileSync(path.join(dir, 'knip.json'), '{');
     const r = run({ root: dir, env: {} });
     assert.equal(r.exitCode, 2);
@@ -76,6 +86,13 @@ test('the built CLI maps run() to process exit codes', () => {
   const exec = (...args: string[]) => spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8' });
   withCopy('knip-defects', (dir) => assert.equal(exec('check', '--root', dir).status, 1));
   withCopy('knip-clean', (dir) => assert.equal(exec('check', '--root', dir).status, 0));
+  withCopy('knip-clean', (dir) => {
+    writeFileSync(path.join(dir, 'knip.json'), '{');
+    const failed = exec('check', '--root', dir);
+    assert.equal(failed.status, 2);
+    assert.equal(failed.stdout, '');
+    assert.match(failed.stderr, /^integrity: analysis failed: /);
+  });
   const bad = exec('bogus');
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /usage: integrity check/);

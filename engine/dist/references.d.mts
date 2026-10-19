@@ -5,4 +5,5 @@ export declare function workflowPaths(text: string): {
     line: number;
     via: 'run' | 'uses';
 }[];
+export declare function isCallable(text: string): boolean;
 export declare function checkReferences(root: string): Finding[];

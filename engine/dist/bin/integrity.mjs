@@ -18,7 +18,7 @@ if (root === undefined) {
 else {
     try {
         const result = run({ root, env: process.env });
-        console.log(result.text);
+        (result.exitCode === 2 ? console.error : console.log)(result.text);
         process.exitCode = result.exitCode;
     }
     catch (e) {

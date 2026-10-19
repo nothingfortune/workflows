@@ -146,6 +146,10 @@ function checkScripts(root) {
     }
     return out;
 }
+// Steps in a callable workflow run in the caller's checkout, so their run: paths are not ours to check.
+export function isCallable(text) {
+    return /^\s*workflow_call\s*:/m.test(text) || /^\s*on\s*:.*\bworkflow_call\b/m.test(text);
+}
 function checkWorkflows(root) {
     const dir = path.join(root, '.github', 'workflows');
     if (!existsSync(dir))
@@ -157,7 +161,11 @@ function checkWorkflows(root) {
         .sort();
     for (const name of files) {
         const rel = `.github/workflows/${name}`;
-        for (const ref of workflowPaths(readFileSync(path.join(dir, name), 'utf8'))) {
+        const text = readFileSync(path.join(dir, name), 'utf8');
+        const callable = isCallable(text);
+        for (const ref of workflowPaths(text)) {
+            if (callable && ref.via === 'run')
+                continue;
             const abs = path.join(root, ref.path);
             const isAction = ref.via === 'uses' && !/\.ya?ml$/.test(ref.path);
             const ok = isAction ? existsSync(path.join(abs, 'action.yml')) || existsSync(path.join(abs, 'action.yaml')) : existsSync(abs);

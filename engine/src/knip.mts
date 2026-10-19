@@ -13,7 +13,7 @@ export class AnalysisError extends Error {
   }
 }
 
-type Pass = 'default' | 'production';
+type Pass = 'default' | 'production' | 'cycles';
 type Item = { name?: string; specifier?: string; line?: number; col?: number };
 
 const RULE_FOR: Readonly<Record<string, RuleId>> = {
@@ -64,9 +64,15 @@ export function resolveKnip(root: string): { bin: string; version: string } {
   return { bin: path.resolve(path.dirname(pkgPath), rel), version: pkg.version };
 }
 
-export function runKnip(root: string, opts: { production: boolean }): unknown {
-  const { bin } = resolveKnip(root);
-  const args = [bin, '--reporter', 'json', '--no-progress', ...(opts.production ? ['--production'] : [])];
+export function runKnip(root: string, knip: { bin: string }, opts: { production: boolean; include?: string }): unknown {
+  const args = [
+    knip.bin,
+    '--reporter',
+    'json',
+    '--no-progress',
+    ...(opts.include ? ['--include', opts.include] : []),
+    ...(opts.production ? ['--production'] : []),
+  ];
   const res = spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   const firstErr = (res.stderr ?? '').split('\n').find((l) => l.trim() !== '') ?? '';
   if (res.error) throw new AnalysisError(`knip failed to start: ${res.error.message}`);
@@ -132,4 +138,15 @@ export function mergePasses(def: Finding[], prod: Finding[]): Finding[] {
     out.push(next);
   }
   return out;
+}
+
+// knip 6 omits cycles by default, and --include on the main passes would override the consumer's knip.json exclude.
+export function knipFindings(root: string, knip: { bin: string }): Finding[] {
+  const merged = mergePasses(
+    mapKnip(runKnip(root, knip, { production: false }), 'default'),
+    mapKnip(runKnip(root, knip, { production: true }), 'production'),
+  );
+  const seen = new Set(merged.map((f) => f.fingerprint));
+  const cycles = mapKnip(runKnip(root, knip, { production: true, include: 'cycles' }), 'cycles');
+  return [...merged, ...cycles.filter((f) => !seen.has(f.fingerprint))];
 }

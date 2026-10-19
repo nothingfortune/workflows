@@ -59,8 +59,9 @@ reading private repos in other orgs needs your token, not a workflow's.
 ## Integrity engine
 
 `integrity check` finds broken references, dead code and import cycles in a
-consumer repo. It runs the repo's own knip twice, once in the default mode and
-once with `--production`, and adds its own check for paths that do not exist.
+consumer repo. It runs the repo's own knip three times (default, `--production`,
+and a dedicated `--include cycles --production` pass for import cycles) and adds
+its own check for paths that do not exist.
 It writes `build/integrity/report.json`. In GitHub Actions it also appends a
 step summary and emits `::error`, `::warning` and `::notice` annotations. The
 engine is built from `engine/src/` into the committed `engine/dist/`, and
@@ -76,14 +77,23 @@ or newer.
 | --- | --- | --- |
 | REF-001 | A broken reference (an import that does not resolve) | error |
 | REF-002 | An unlisted dependency | error |
-| REF-003 | A path that does not exist, named in a `package.json` script, a `knip.json` `entry` or `project`, or a workflow `run:` or `uses: ./` line | error |
+| REF-003 | A path that does not exist, named in a `package.json` script, a `knip.json` `entry` or `project`, or a workflow `run:` or `uses: ./` line (`run:` paths in a callable workflow are not checked) | error |
 | DEAD-001 | An orphaned file | warning |
 | DEAD-002 | An unused export | warning |
 | DEAD-003 | An unused dependency | warning |
-| DEAD-004 | A disconnected file | warning |
+| DEAD-004 | Code reachable only from tests (a file or an export) | warning |
 | CYC-001 | A circular dependency | warning |
 
-REF-003 skips git-ignored build output. Confidence (high for every rule except
+REF-003 skips git-ignored paths and does not check globs or negated
+(`!`-prefixed) `knip.json` entries. In this release a REF-003 false positive has
+no suppression yet (suppressions arrive in phase I2), so `observe` mode is the
+only outlet. CYC-001 comes from knip's `cycles` issue type, which the engine
+enables in its own pass.
+
+Do not put `include` or `exclude` in `knip.json` to turn issue types on or off:
+they change which types knip reports and can remove REF-001 and REF-002 from the
+run. In particular, do not use `include` to enable cycles; the engine already
+does. Confidence (high for every rule except
 REF-003, which is medium) is reported but never decides whether a finding
 blocks. In `enforce` mode errors and warnings block and info never does.
 
@@ -93,7 +103,7 @@ blocks. In `enforce` mode errors and warnings block and info never does.
 | --- | --- |
 | `0` | Pass, or `observe` mode |
 | `1` | Blocking findings |
-| `2` | Analysis failure, invalid config, or an unknown knip issue type |
+| `2` | Analysis failure, invalid config, an unknown knip issue type, a usage error, or an internal error |
 
 ### Adoption
 
