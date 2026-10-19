@@ -1,4 +1,4 @@
-// Prints the next release tag for the commits since the last semver tag, or nothing; rules: README → Releases.
+// Prints the next release tag for the commits since the last semver tag, or nothing; releasable paths: isReleasablePath, rules: README → Releases.
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -25,11 +25,16 @@ export function bump(tag: string, level: Level): string {
   return `v${maj}.${min}.${pat + 1}`;
 }
 
+// Engine source, its committed dist and the root package.json ship to consumers, like a callable workflow.
+export function isReleasablePath(file: string, callable: (file: string) => boolean): boolean {
+  return file.startsWith('engine/src/') || file.startsWith('engine/dist/') || file === 'package.json' || callable(file);
+}
+
 // commits: [{ subject, body, files }]; isCallable(file) → boolean.
 export function nextVersion(lastTag: string, commits: Commit[], isCallable: (file: string) => boolean): string | null {
   let best = -1;
   for (const c of commits) {
-    if (!c.files.some(isCallable)) continue;
+    if (!c.files.some((f) => isReleasablePath(f, isCallable))) continue;
     const level = commitLevel(c);
     if (level) best = Math.max(best, LEVELS.indexOf(level));
   }

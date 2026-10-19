@@ -6,7 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { bump, nextVersion, parseLog } from './next-version.mts';
+import { bump, isReleasablePath, nextVersion, parseLog } from './next-version.mts';
 import type { Commit } from './next-version.mts';
 
 const CALLABLE = '.github/workflows/ci.yml';
@@ -40,6 +40,17 @@ test('a feat that touches no callable workflow does not release', () => {
 test('the highest level across commits wins, in any order', () => {
   assert.equal(nextVersion('v1.1.1', [c('feat: a'), c('fix: b'), c('docs: c')], isCallable), 'v1.2.0');
   assert.equal(nextVersion('v1.1.1', [c('docs: c'), c('fix: b'), c('feat!: a')], isCallable), 'v2.0.0');
+});
+
+test('engine source, its dist and the root package.json are releasable; engine tests and the lockfile are not', () => {
+  const never = (): boolean => false;
+  assert.equal(isReleasablePath('engine/src/knip.mts', never), true);
+  assert.equal(isReleasablePath('engine/dist/knip.mjs', never), true);
+  assert.equal(isReleasablePath('package.json', never), true);
+  assert.equal(isReleasablePath('engine/test/knip.test.mts', never), false);
+  assert.equal(isReleasablePath('package-lock.json', never), false);
+  assert.equal(isReleasablePath('.github/workflows/ci.yml', () => true), true);
+  assert.equal(isReleasablePath('.github/workflows/lint.yml', never), false);
 });
 
 test('no commits means no release', () => {
@@ -127,6 +138,15 @@ test('CLI: a commit already carrying a release tag prints it again, so a failed 
   r.write('.github/workflows/ci.yml', 'on:\n  workflow_call: { inputs: {} }\n');
   r.git('commit', '-qam', 'feat: ci input');
   r.git('tag', '-a', 'v1.1.0', '-m', 'v1.1.0');
+  assert.equal(r.run(), 'v1.1.0\n');
+  rmSync(r.root, { recursive: true, force: true });
+});
+
+test('CLI: a feat touching only engine source is a release', () => {
+  const r = repo();
+  r.write('engine/src/x.mts', 'export {};\n');
+  r.git('add', '-A');
+  r.git('commit', '-qm', 'feat: engine');
   assert.equal(r.run(), 'v1.1.0\n');
   rmSync(r.root, { recursive: true, force: true });
 });

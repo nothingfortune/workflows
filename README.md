@@ -20,8 +20,10 @@ Releases are automatic. On every push to `main`, `release.yml` runs
 when a release is due, tags it, moves the major tag and publishes the release
 with generated notes.
 
-A release is due only when a commit touches a **callable** workflow (one with
-`workflow_call`) — the contract consumers pin. Changes to this repo's own CI,
+A release is due only when a commit touches a releasable path: a **callable**
+workflow (one with `workflow_call`) — the contract consumers pin — or the
+integrity engine (`engine/src/**`, its committed build in `engine/dist/**`, and
+the root `package.json`). Engine tests, the lockfile and this repo's own CI,
 scripts or docs never release, so consumers get no Dependabot noise from them.
 The commit type sets the level:
 
