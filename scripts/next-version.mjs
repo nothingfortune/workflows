@@ -47,6 +47,7 @@ export function parseLog(out) {
 
 function main(root) {
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  const quietGit = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   // A commit already tagged is a release that may not have finished publishing; name it again.
   const own = git('tag', '--points-at', 'HEAD').split('\n').find((t) => /^v\d+\.\d+\.\d+$/.test(t));
   if (own) return void console.log(own);
@@ -54,7 +55,7 @@ function main(root) {
   const log = git('log', '--no-merges', '--format=%x1e%s%x1f%b%x1f', '--name-only', `${lastTag}..HEAD`);
   const callableAt = (ref, file) => {
     try {
-      return git('show', `${ref}:${file}`).includes('workflow_call');
+      return quietGit('show', `${ref}:${file}`).includes('workflow_call');
     } catch {
       return false; // absent at that ref
     }

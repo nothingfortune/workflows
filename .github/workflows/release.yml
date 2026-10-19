@@ -1,6 +1,6 @@
 name: release
 
-# Every merge that changes a callable workflow cuts an immutable semver tag
+# A push to main that changes a callable workflow cuts an immutable semver tag
 # and release and moves the major tag. Rules: README → Releases.
 
 on:
