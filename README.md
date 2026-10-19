@@ -42,11 +42,24 @@ GitHub drops all but the newest waiting run, and that run releases every merge
 since the last tag as one version. The major tag only moves forward: re-running
 an older release republishes it but leaves `v1` on the newest release.
 
+## Fleet report
+
+`node scripts/fleet-report.mjs` reads every non-archived source repo in
+`nothingfortune` and `hestiamediagroup` (or each `--owner` you pass) with your
+`gh` login and prints a table. It shows each call to a shared workflow, the
+release it pins, and whether that release is current, behind, unpinned
+(`@v1`) or not a release at all. It also lists repos whose workflow file has
+the same name as a shared workflow but never calls it, which is usually a
+copy that has stopped getting fixes, and repos that call nothing.
+`--strict` exits 1 when anything needs attention. It runs locally because
+reading private repos in other orgs needs your token, not a workflow's.
+
 ## The workflows
 
 | Workflow                    | What it does                                                                                                          |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `ci.yml`                    | The gate: `npm ci` + `npm run check`, least-privilege.                                                                |
+| `scope.yml`                 | Doc-only classifier: outputs `doc_only` = `true`/`false`/`unknown`; callers gate jobs with `if:` and pick the fail direction.|
 | `e2e.yml`                   | Playwright vs the BUILT app; draft-skipped; dormant (no-op) until the repo has a `playwright.config.*`.               |
 | `deploy-design-preview.yml` | Static design suite → Cloudflare Pages; main = production, branches = previews; project auto-named `<repo>-design`.   |
 
