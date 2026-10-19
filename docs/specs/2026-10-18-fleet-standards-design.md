@@ -4,9 +4,9 @@
 **Status:** Draft for review. Not built. Decisions still open are in §11.
 **Home:** `nothingfortune/workflows` (this repo), which owns shared CI.
 **Sources:**
-- "Specification: CI Code Reference Integrity & Dead Code Detection", pasted
-  2026-10-18 and called **the requirements** below. Its FR, § and phase
-  numbers are cited as they appear there.
+- [`2026-10-18-code-integrity-requirements.md`](2026-10-18-code-integrity-requirements.md),
+  the user's requirements, kept verbatim and called **the requirements**
+  below. Its FR, § and phase numbers are cited as they appear there.
 - outerReach `docs/specs/2026-10-11-feature-map-design.md`, called
   **feature-map**.
 - base `docs/guides/quality-gates.md`.
@@ -222,6 +222,11 @@ does, with tests that extract and run the `run:` block
 
 **Severity and enforcement:**
 
+- Enforcement is by severity alone. `confidence` is reported and shown
+  in the summary but never decides what blocks. A rule whose findings can
+  be low-confidence therefore defaults to `info` (requirements §16: never
+  block on low confidence alone). DEAD-005 and `declared-load` findings
+  are medium, and DYN-001 is low.
 - Warnings fail the gate in enforce mode unless baselined or suppressed.
   base already runs knip with zero tolerance, and the rule names keep
   severity visible.
@@ -243,6 +248,9 @@ specifier | normalized expression)`.
 - The expression is whitespace-collapsed, and used only for DYN and CYC.
 - A cycle's identity is its member paths, rotated so the
   lexicographically smallest path comes first.
+- For DYN-001, the symbol slot holds the enclosing function. That makes
+  the identity feature-map's unresolved-edge identity: file, edge kind,
+  enclosing function, normalized expression.
 - **There are no line numbers**, so an unrelated edit does not change a
   fingerprint (feature-map §6).
 
@@ -253,10 +261,12 @@ The four layers of requirements §4 map like this:
 - **Layer 1, static analysis:** the extractor and knip.
 - **Layer 2, framework conventions:** knip's plugins, such as vitest,
   eslint and next.
-- **Layer 3, explicit registrations:** in `integrity.json`, a registration
-  names a registry file and target globs. Each match becomes an edge of
-  kind `registration` with confidence medium, so its targets are
-  reachable but labeled as declared, not proven.
+- **Layer 3, explicit registrations:** in `integrity.json` →
+  `loaders[]`, each entry names a loader file and target globs. Each match
+  becomes an edge of kind `declared-load` with confidence medium, so its
+  targets are reachable but labeled as declared, not proven. These are not
+  called "registrations", because feature-map uses that word for
+  REST/menu/CLI identities that never decide reachability or boundaries.
 - **Layer 4, unknown:** every unresolved dynamic reference is a DYN-001
   finding, listed in every run.
 
@@ -297,6 +307,9 @@ are not separate modes: an empty baseline *is* strict.
 - An expired suppression fails, and so does one that matches nothing.
 - The difference from the baseline: **a baseline is debt to burn down,
   and a suppression is a justified decision.**
+- REF findings cannot be baselined, but they can be suppressed, so a
+  misfiring REF-003 path match has an outlet short of turning the gate
+  off. CFG-001 can be neither.
 
 The `@public-api` JSDoc marker keeps working for exports, through knip's
 `--tags`.
@@ -335,6 +348,30 @@ defaulted, because shared `ci.yml` stays `contents: read`.
   on a feature. An undeclared feature dependency fails (feature-map §7).
 
 The same graph rules evaluate both. There is no second rule engine.
+
+### 6.7 Relationship to feature-map
+
+There is one core. The edge format, the graph rules, the baseline and the
+findings layer specified here *are* the core that feature-map §11 calls for.
+They are built once, in the repo chosen in §11 decision 2.
+
+- **Edges.** The shared core owns the `edges.json` schema. This design
+  uses feature-map's fields (source, target, kind, line, resolved) and
+  adds only the `declared-load` kind.
+- **Baseline.** There is one file per repo, `integrity-baseline.json`. It
+  replaces feature-map's planned `features.baseline.json`. Feature-map's
+  boundary violations and unresolved edges become ARCH and DYN findings in
+  it.
+- **Cycles.** feature-map's "any cycle fails" is outerReach's
+  configuration: CYC-001 is set to `error` there. Existing cycles are
+  baselined, exactly as feature-map §7 bootstraps its violations.
+- **outerReach's boundary gate (feature-map gate J)** is implemented by
+  this engine's ARCH rules over the PHP extractor's edges once that
+  extractor exists. Neither repo gets a second boundary checker.
+- **Status, 2026-10-18:** no feature-map core work has started
+  (`nothingfortune/feature-map` does not exist). I3 builds the TS
+  extractor in the form feature-map needs. outerReach adopts through
+  feature-map's own PR sequence and is not an adopter in this plan.
 
 ## 7. Fleet monitoring
 
