@@ -1,0 +1,50 @@
+name: release
+
+# A push to main that changes a callable workflow cuts an immutable semver tag
+# and release and moves the major tag. Rules: README → Releases.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+# One release at a time. GitHub keeps only the newest pending run; that run covers every merge since the last tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # tags and history since the last release
+      - run: node --test scripts/next-version.test.mjs
+      - id: next
+        # Assigned first: under bash -e a crashing script fails the step instead of reading as "no release".
+        run: |
+          tag="$(node scripts/next-version.mjs)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - if: steps.next.outputs.tag != ''
+        env:
+          TAG: ${{ steps.next.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        # Each step skips work already done, so re-running a failed release finishes it.
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          major="${TAG%%.*}"
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "$TAG"
+          # A tag already pushed elsewhere must not redirect the major tag or the release.
+          [ "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)" ] || { echo "::error::$TAG exists on another commit"; exit 1; }
+          git push origin "refs/tags/$TAG"
+          # The major tag only moves forward: re-running an older release must not roll it back.
+          if [ "$(git tag --list "$major.*.*" --sort=-v:refname | head -n1)" = "$TAG" ]; then
+            git tag -f "$major" HEAD
+            git push -f origin "refs/tags/$major"
+          fi
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag

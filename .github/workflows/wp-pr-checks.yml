@@ -36,7 +36,7 @@ name: WP PR checks (reusable)
 #   permissions: { contents: read }
 #   jobs:
 #     gate:
-#       uses: nothingfortune/workflows/.github/workflows/wp-pr-checks.yml@v1
+#       uses: nothingfortune/workflows/.github/workflows/wp-pr-checks.yml@<sha> # v<X.Y.Z>
 #       with:
 #         theme_path: web/app/themes/<theme-slug>
 #

@@ -7,7 +7,7 @@ name: CI (reusable)
 #   concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }
 #   jobs:
 #     check:
-#       uses: nothingfortune/workflows/.github/workflows/ci.yml@v1
+#       uses: nothingfortune/workflows/.github/workflows/ci.yml@<sha> # v<X.Y.Z>
 
 on:
   workflow_call: {}

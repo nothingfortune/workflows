@@ -5,9 +5,42 @@ repo sources instead of re-porting. Battle-tested in
 [dollyVision](https://github.com/nothingfortune/dollyVision); templated by
 [base](https://github.com/nothingfortune/base).
 
-**Versioning:** callers pin `@v1`. Rollout = moving the tag (deliberate,
-blast-radius controlled). A breaking change to a workflow's contract cuts
-`v2`; dependabot bumps callers.
+**Versioning:** every release gets an immutable semver tag (`v1.1.1`) and a
+GitHub release; `v1` moves to the newest `v1.x.y`. Callers pin the release's
+commit SHA with its tag as a comment — `@<sha> # v1.1.1` — and Dependabot
+bumps them. It reads the tag to title the PR ("from 1.1.0 to 1.1.1") and to
+classify it as patch, minor or major, which is what lets auto-merge take
+patches and minors; a commit with no semver tag gives an untitled,
+unclassified SHA-to-SHA bump that always waits for a human.
+
+## Releases
+
+Releases are automatic. On every push to `main`, `release.yml` runs
+`scripts/next-version.mjs` over the commits since the last semver tag and,
+when a release is due, tags it, moves the major tag and publishes the release
+with generated notes.
+
+A release is due only when a commit touches a **callable** workflow (one with
+`workflow_call`) — the contract consumers pin. Changes to this repo's own CI,
+scripts or docs never release, so consumers get no Dependabot noise from them.
+The commit type sets the level:
+
+| Commit | Release |
+| --- | --- |
+| `type!:` or a `BREAKING CHANGE:` footer | major (`v2.0.0`; starts the `v2` tag) |
+| `feat` | minor |
+| `docs`, `chore`, `ci`, `test`, `style` | none |
+| anything else (`fix`, `build(deps)`, `security`, no type, …) | patch |
+
+An unrecognised type errs toward releasing; deleting a callable workflow
+counts as touching it. The highest level among the commits wins. The rules
+are tested in `scripts/next-version.test.mjs`, which `lint.yml` and
+`release.yml` both run.
+
+Releases run one at a time. When merges land faster than releases finish,
+GitHub drops all but the newest waiting run, and that run releases every merge
+since the last tag as one version. The major tag only moves forward: re-running
+an older release republishes it but leaves `v1` on the newest release.
 
 ## The workflows
 
@@ -28,7 +61,7 @@ on: { push: { branches: [main] }, pull_request: }
 concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }
 jobs:
   check:
-    uses: nothingfortune/workflows/.github/workflows/ci.yml@v1
+    uses: nothingfortune/workflows/.github/workflows/ci.yml@<sha> # v<X.Y.Z>
 ```
 
 Callers own **triggers** and **concurrency**; this repo owns the jobs.

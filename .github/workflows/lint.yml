@@ -32,3 +32,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: node scripts/audit-selftest.mjs
       - run: node scripts/audit-workflows.mjs .github/workflows
+
+  # release.yml trusts next-version.mjs to decide what consumers receive; test it before it decides.
+  release-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: node --test scripts/next-version.test.mjs

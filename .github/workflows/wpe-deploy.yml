@@ -29,7 +29,7 @@ name: WPE deploy (reusable)
 #   jobs:
 #     variant-a:
 #       if: ${{ vars.WPE_DEPLOY_ENABLED == 'true' }}
-#       uses: nothingfortune/workflows/.github/workflows/wpe-deploy.yml@v1
+#       uses: nothingfortune/workflows/.github/workflows/wpe-deploy.yml@<sha> # v<X.Y.Z>
 #       with:
 #         install: ${{ vars.WPE_INSTALL_VARIANT_A }}
 #         active_theme: ${{ vars.WPE_ACTIVE_THEME }}
@@ -38,7 +38,7 @@ name: WPE deploy (reusable)
 #       secrets: inherit
 #     variant-b:
 #       if: ${{ vars.WPE_DEPLOY_ENABLED == 'true' }}
-#       uses: nothingfortune/workflows/.github/workflows/wpe-deploy.yml@v1
+#       uses: nothingfortune/workflows/.github/workflows/wpe-deploy.yml@<sha> # v<X.Y.Z>
 #       with:
 #         install: ${{ vars.WPE_INSTALL_VARIANT_B }}
 #         active_theme: ${{ vars.WPE_ACTIVE_THEME }}
