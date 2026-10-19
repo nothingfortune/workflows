@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cycleSymbol, fingerprint, makeFinding } from '../src/finding.mts';
+import { cycleSymbol, fingerprint, makeFinding, normalizePath } from '../src/finding.mts';
 
 const base = { file: 'src/a.ts', message: 'm', evidence: [], analyzer: 'knip' };
 
@@ -8,6 +8,31 @@ test('the same finding on Windows and POSIX paths has one fingerprint', () => {
   const a = fingerprint('DEAD-001', 'src\\a.ts');
   assert.equal(a, fingerprint('DEAD-001', 'src/a.ts'));
   assert.equal(a, fingerprint('DEAD-001', './src/a.ts'));
+});
+
+test('repeated slashes and dot segments collapse; absolute and parent paths throw', () => {
+  assert.equal(normalizePath('a//b'), 'a/b');
+  assert.equal(normalizePath('a/./b'), 'a/b');
+  assert.equal(normalizePath('.//a\\.\\b'), 'a/b');
+  assert.throws(() => normalizePath('/abs'), /outside the repo/);
+  assert.throws(() => normalizePath('a/../b'), /outside the repo/);
+  assert.equal(fingerprint('DEAD-001', 'a//b.ts'), fingerprint('DEAD-001', 'a/b.ts'));
+});
+
+test('the fingerprint of a known input is pinned', () => {
+  assert.equal(fingerprint('DEAD-002', 'src/a.ts', 'x', ''), 'a4bdf79ea303c775d4fe38b4f3f23ed14fbfbae267b053bf68143a8cbfbc38e7');
+});
+
+test('expression changes the fingerprint', () => {
+  const a = makeFinding({ ...base, ruleId: 'REF-001', symbol: 'x', expression: 'one' });
+  const b = makeFinding({ ...base, ruleId: 'REF-001', symbol: 'x', expression: 'two' });
+  assert.notEqual(a.fingerprint, b.fingerprint);
+});
+
+test('makeFinding stores the normalized file and rejects Windows-absolute and absolute paths', () => {
+  assert.equal(makeFinding({ ...base, ruleId: 'REF-001', file: './src//a.ts' }).file, 'src/a.ts');
+  assert.throws(() => makeFinding({ ...base, ruleId: 'REF-001', file: 'C:\\x' }), /outside the repo/);
+  assert.throws(() => makeFinding({ ...base, ruleId: 'REF-001', file: '/abs' }), /outside the repo/);
 });
 
 test('line numbers never reach the fingerprint', () => {

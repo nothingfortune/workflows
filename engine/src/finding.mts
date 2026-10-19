@@ -23,7 +23,10 @@ export function normalizePath(p: string): string {
   if (posix.startsWith('/') || /^[A-Za-z]:/.test(posix) || posix.split('/').includes('..')) {
     throw new Error(`${p} is outside the repo`);
   }
-  return posix.replace(/^(\.\/)+/, '');
+  return posix
+    .split('/')
+    .filter((seg) => seg !== '' && seg !== '.')
+    .join('/');
 }
 
 export function fingerprint(ruleId: RuleId, file: string, symbol?: string, expression?: string): string {
