@@ -14,5 +14,5 @@
     "check": "npm run typecheck && npm test && npm run audit && npm run build:check"
   },
   "peerDependencies": { "knip": ">=6 <7" },
-  "devDependencies": { "@types/node": "^24", "knip": "6.41.0", "typescript": "6.0.3" }
+  "devDependencies": { "@types/node": "^24", "knip": "6.41.0", "typescript": "7.0.2" }
 }
