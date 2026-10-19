@@ -1,0 +1,70 @@
+name: Scope (reusable)
+
+# Classifies a change as doc-only (docs/** and *.md, nothing else). Outputs
+# doc_only = true | false | unknown; the caller picks the fail direction for
+# unknown. Gate with a job-level `if:`, never a path filter: a path-filtered
+# workflow creates no check run, so a required check waits forever.
+#
+# Caller where the full gate is the required lane (unknown runs it):
+#   jobs:
+#     scope:
+#       uses: nothingfortune/workflows/.github/workflows/scope.yml@<sha> # v<X.Y.Z>
+#     check:
+#       needs: scope
+#       if: ${{ !cancelled() && needs.scope.outputs.doc_only != 'true' }}
+#       uses: nothingfortune/workflows/.github/workflows/ci.yml@<sha> # v<X.Y.Z>
+#
+# Caller where a docs lane is the backstop (unknown runs the docs lane):
+#     docs:
+#       needs: scope
+#       if: ${{ !cancelled() && needs.scope.outputs.doc_only != 'false' }}
+
+on:
+  workflow_call:
+    outputs:
+      doc_only:
+        description: 'true, false, or unknown when the base commit cannot be resolved'
+        value: ${{ jobs.scope.outputs.doc_only }}
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      doc_only: ${{ steps.classify.outputs.doc_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # the diff needs the base commit
+      - id: classify
+        env:
+          # PR: the current base branch, not base.sha, which is fixed when the PR opens. Push: the previous head.
+          BASE_SHA: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: |
+          out="${GITHUB_OUTPUT:-/dev/stdout}"
+          if [ -z "${BASE_SHA:-}" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "scope unknown: base '${BASE_SHA:-unset}' cannot be resolved" >&2
+            echo "doc_only=unknown" >> "$out"
+            exit 0
+          fi
+          # NUL-delimited so a newline in a filename cannot split it; --no-renames so a code→doc rename shows the deleted code path.
+          changed="$(mktemp)"
+          # A failed diff must fail the step: read through a process substitution it would look like no changes, i.e. doc-only.
+          git diff --no-renames --name-only -z "${BASE_SHA}...HEAD" > "$changed"
+          nondoc=""
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              docs/* | *.md) ;;
+              *) nondoc="$path"; break ;;
+            esac
+          done < "$changed"
+          if [ -n "$nondoc" ]; then
+            echo "not doc-only: $nondoc" >&2
+            echo "doc_only=false" >> "$out"
+          else
+            echo "doc-only change" >&2
+            echo "doc_only=true" >> "$out"
+          fi
