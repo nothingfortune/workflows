@@ -42,3 +42,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: node --test scripts/next-version.test.mjs
+
+  # The fleet report is run by hand with your gh login; its parsing and status rules are tested here.
+  fleet-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: node --test scripts/fleet-report.test.mjs
