@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
-import { run } from "../run.mjs";
+import { run } from '../run.mjs';
 const USAGE = 'usage: integrity check [--root <dir>]';
 function parse(argv) {
     const [cmd, flag, dir, ...rest] = argv;

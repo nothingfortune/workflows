@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { cycleSymbol, makeFinding } from "./finding.mjs";
+import { cycleSymbol, makeFinding } from './finding.mjs';
 export class AnalysisError extends Error {
     constructor(message) {
         super(message);

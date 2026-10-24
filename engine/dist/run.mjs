@@ -1,11 +1,11 @@
 import { appendFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { loadConfig } from "./config.mjs";
-import { AnalysisError, knipFindings, resolveKnip } from "./knip.mjs";
-import { evaluate } from "./policy.mjs";
-import { checkReferences } from "./references.mjs";
-import { renderAnnotations, renderSummary, renderText } from "./render.mjs";
-import { engineVersion } from "./version.mjs";
+import { loadConfig } from './config.mjs';
+import { AnalysisError, knipFindings, resolveKnip } from './knip.mjs';
+import { evaluate } from './policy.mjs';
+import { checkReferences } from './references.mjs';
+import { renderAnnotations, renderSummary, renderText } from './render.mjs';
+import { engineVersion } from './version.mjs';
 function count(findings) {
     const counts = {};
     for (const f of findings)
