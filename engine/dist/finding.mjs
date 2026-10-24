@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { RULES } from "./rules.mjs";
+import { RULES } from './rules.mjs';
 export function normalizePath(p) {
     const posix = p.replaceAll('\\', '/');
     if (posix.startsWith('/') || /^[A-Za-z]:/.test(posix) || posix.split('/').includes('..')) {
