@@ -13,7 +13,7 @@ name: Dependabot auto-merge (reusable)
 #   permissions: { contents: write, pull-requests: write }
 #   jobs:
 #     auto-merge:
-#       uses: nothingfortune/workflows/.github/workflows/dependabot-automerge.yml@<sha> # v1
+#       uses: nothingfortune/workflows/.github/workflows/dependabot-automerge.yml@<sha> # v<X.Y.Z>
 
 on:
   workflow_call: {}
@@ -26,6 +26,7 @@ jobs:
   auto-merge:
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Fetch Dependabot metadata
         id: meta

@@ -1,0 +1,7 @@
+{
+  "name": "knip-defects",
+  "private": true,
+  "type": "module",
+  "devDependencies": { "vitest": "3.0.0" },
+  "dependencies": { "is-odd": "3.0.1" }
+}

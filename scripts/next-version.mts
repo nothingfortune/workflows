@@ -1,0 +1,82 @@
+// Prints the next release tag for the commits since the last semver tag, or nothing; releasable paths: isReleasablePath, rules: README → Releases.
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const NO_RELEASE = new Set(['docs', 'chore', 'ci', 'test', 'style']);
+const LEVELS = ['patch', 'minor', 'major'] as const;
+
+export type Level = (typeof LEVELS)[number];
+export type Commit = { subject: string; body: string; files: string[] };
+
+export function commitLevel({ subject, body }: Pick<Commit, 'subject' | 'body'>): Level | null {
+  const m = /^(\w+)(?:\([^)]*\))?(!)?:/.exec(subject);
+  if (m?.[2] || /^BREAKING[ -]CHANGE:/m.test(body)) return 'major';
+  if (!m) return 'patch';
+  if (m[1] === 'feat') return 'minor';
+  return NO_RELEASE.has(m[1] ?? '') ? null : 'patch';
+}
+
+export function bump(tag: string, level: Level): string {
+  const m = /^v(\d+)\.(\d+)\.(\d+)$/.exec(tag);
+  if (!m) throw new Error(`not a semver tag: ${tag}`);
+  const [maj = 0, min = 0, pat = 0] = m.slice(1).map(Number);
+  if (level === 'major') return `v${maj + 1}.0.0`;
+  if (level === 'minor') return `v${maj}.${min + 1}.0`;
+  return `v${maj}.${min}.${pat + 1}`;
+}
+
+// Engine source, its committed dist and the root package.json ship to consumers, like a callable workflow.
+export function isReleasablePath(file: string, callable: (file: string) => boolean): boolean {
+  return file.startsWith('engine/src/') || file.startsWith('engine/dist/') || file === 'package.json' || callable(file);
+}
+
+// commits: [{ subject, body, files }]; isCallable(file) → boolean.
+export function nextVersion(lastTag: string, commits: Commit[], isCallable: (file: string) => boolean): string | null {
+  let best = -1;
+  for (const c of commits) {
+    if (!c.files.some((f) => isReleasablePath(f, isCallable))) continue;
+    const level = commitLevel(c);
+    if (level) best = Math.max(best, LEVELS.indexOf(level));
+  }
+  const top = LEVELS[best];
+  return top ? bump(lastTag, top) : null;
+}
+
+// `git log` with \x1e before each commit and \x1f between subject and body.
+export function parseLog(out: string): Commit[] {
+  return out
+    .split('\x1e')
+    .filter((rec) => rec.trim() !== '')
+    .map((rec) => {
+      const [subject = '', body = '', rest = ''] = rec.split('\x1f');
+      const files = rest.split('\n').map((f) => f.trim()).filter(Boolean);
+      return { subject: subject.trim(), body, files };
+    });
+}
+
+function main(root: string): void {
+  const git = (...args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  const quietGit = (...args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  // A commit already tagged is a release that may not have finished publishing; name it again.
+  const own = git('tag', '--points-at', 'HEAD').split('\n').find((t) => /^v\d+\.\d+\.\d+$/.test(t));
+  if (own) return void console.log(own);
+  const lastTag = git('describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*.[0-9]*.[0-9]*').trim();
+  const log = git('log', '--no-merges', '--format=%x1e%s%x1f%b%x1f', '--name-only', `${lastTag}..HEAD`);
+  const callableAt = (ref: string, file: string): boolean => {
+    try {
+      return quietGit('show', `${ref}:${file}`).includes('workflow_call');
+    } catch {
+      return false; // absent at that ref
+    }
+  };
+  // Callable at the last release counts too: removing or deleting a pinned contract breaks callers.
+  const isCallable = (file: string): boolean =>
+    /^\.github\/workflows\/[^/]+\.ya?ml$/.test(file) && (callableAt(lastTag, file) || callableAt('HEAD', file));
+  const next = nextVersion(lastTag, parseLog(log), isCallable);
+  if (next) console.log(next);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const i = process.argv.indexOf('--root');
+  main((i > 0 ? process.argv[i + 1] : undefined) ?? process.cwd());
+}

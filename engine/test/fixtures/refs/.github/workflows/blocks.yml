@@ -1,0 +1,13 @@
+name: blocks
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          # bash nope.sh
+          node scripts/real.mjs
+          bash .github/scripts/block-gone.sh
+      - uses: ./.github/workflows/reuse.yml
+      - uses: ./.github/workflows/gone.yml
+      - run: echo done
