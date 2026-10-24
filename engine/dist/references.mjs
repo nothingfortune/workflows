@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { makeFinding } from "./finding.mjs";
-import { AnalysisError } from "./knip.mjs";
+import { makeFinding } from './finding.mjs';
+import { AnalysisError } from './knip.mjs';
 const PATH_TOKEN = /^(?:\.\/)?(?:[\w@.-]+\/)*[\w@.-]+\.(?:mjs|cjs|js|mts|cts|ts|sh|bash|py)$/;
 const EVAL_FLAGS = new Set(['-e', '-c', '--eval', '--print']);
 const INTERPRETERS = new Set(['bash', 'sh', 'node', 'python', 'python3']);

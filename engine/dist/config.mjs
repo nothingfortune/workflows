@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { AnalysisError } from "./knip.mjs";
+import { AnalysisError } from './knip.mjs';
 const KEYS = new Set(['$schema', 'mode']);
 export function loadConfig(root) {
     const file = path.join(root, 'integrity.json');
