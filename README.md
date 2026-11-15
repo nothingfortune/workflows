@@ -28,6 +28,9 @@ jobs:
     with:
       runner: '["self-hosted","linux","x64","build-rig"]'
 ```
+
+A single label is still JSON, so it needs its own quotes: `'"my-runner"'`.
+
 ## Releases
 
 Releases are automatic. On every push to `main`, `release.yml` runs
