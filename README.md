@@ -13,6 +13,21 @@ classify it as patch, minor or major, which is what lets auto-merge take
 patches and minors; a commit with no semver tag gives an untitled,
 unclassified SHA-to-SHA bump that always waits for a human.
 
+## Choosing the runner
+
+Every callable workflow takes a `runner` input: `runs-on` as JSON, either one
+label or an array of labels. It defaults to `"ubuntu-latest"`, so existing
+callers are unchanged. To use a self-hosted runner, pass the labels explicitly;
+if that runner is unavailable the job then waits in the queue instead of
+silently falling back to GitHub-hosted runners:
+
+```yaml
+jobs:
+  check:
+    uses: nothingfortune/workflows/.github/workflows/ci.yml@<sha> # v<X.Y.Z>
+    with:
+      runner: '["self-hosted","linux","x64","build-rig"]'
+```
 ## Releases
 
 Releases are automatic. On every push to `main`, `release.yml` runs

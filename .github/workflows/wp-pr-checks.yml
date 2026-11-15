@@ -47,6 +47,11 @@ name: WP PR checks (reusable)
 on:
   workflow_call:
     inputs:
+      runner:
+        description: 'Where the jobs run, as JSON: one runner label or an array of labels (default: "ubuntu-latest")'
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
       php_version:
         description: 'PHP version for the tests/composer-validate jobs (default: 8.2)'
         type: string
@@ -83,7 +88,7 @@ permissions:
 jobs:
   tests:
     name: PHPUnit + PHPCS + composer audit
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -171,7 +176,7 @@ jobs:
 
   composer-validate:
     name: composer validate (--strict)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -215,7 +220,7 @@ jobs:
     # `php -l` across inputs.php_syntax_versions — proves our source parses across the
     # supported range even though the unit toolchain itself may need a newer floor.
     name: php -l (PHP ${{ matrix.php }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -292,7 +297,7 @@ jobs:
 
   redirects:
     name: redirects.json (validate)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -330,7 +335,7 @@ jobs:
 
   theme-js:
     name: theme JS (typecheck + drift + build)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -425,7 +430,7 @@ jobs:
 
   shell-tests:
     name: bin/lib shell tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -496,7 +501,7 @@ jobs:
 
   real-wp-e2e:
     name: real-WP e2e (DDEV + Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 25
     # This is the most expensive job (boots DDEV + WordPress + browsers). Two cost guards:
     #   1. Skip it entirely on push — the PR already gated the merge, and a deploy job
@@ -752,7 +757,7 @@ jobs:
 
   secret-scan:
     name: Secret scan (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 10
     env:
       GITLEAKS_VERSION: 8.30.1
@@ -779,7 +784,7 @@ jobs:
     # Forward-compat: run the full unit suite across inputs.php_compat_versions, in
     # addition to the `tests` job's primary inputs.php_version.
     name: PHPUnit (PHP ${{ matrix.php }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 15
     strategy:
       fail-fast: false

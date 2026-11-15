@@ -21,6 +21,12 @@ name: Scope (reusable)
 
 on:
   workflow_call:
+    inputs:
+      runner:
+        description: 'Where the jobs run, as JSON: one runner label or an array of labels (default: "ubuntu-latest")'
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
     outputs:
       doc_only:
         description: 'true, false, or unknown when the base commit cannot be resolved'
@@ -31,7 +37,7 @@ permissions:
 
 jobs:
   scope:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 5
     outputs:
       doc_only: ${{ steps.classify.outputs.doc_only }}

@@ -25,6 +25,11 @@ name: Deploy design preview (reusable)
 on:
   workflow_call:
     inputs:
+      runner:
+        description: 'Where the jobs run, as JSON: one runner label or an array of labels (default: "ubuntu-latest")'
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
       project_name:
         description: 'Cloudflare Pages project (default: <repo-lowercase>-design)'
         type: string
@@ -46,7 +51,7 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
