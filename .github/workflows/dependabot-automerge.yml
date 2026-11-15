@@ -19,6 +19,11 @@ name: Dependabot auto-merge (reusable)
 on:
   workflow_call:
     inputs:
+      runner:
+        description: 'Where the jobs run, as JSON: one runner label or an array of labels (default: "ubuntu-latest")'
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
       merge_method:
         description: 'How auto-merge merges: merge, squash or rebase'
         type: string
@@ -32,7 +37,7 @@ permissions:
 jobs:
   auto-merge:
     if: github.actor == 'dependabot[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 5
     steps:
       - name: Check merge_method

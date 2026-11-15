@@ -52,6 +52,11 @@ name: WPE deploy (reusable)
 on:
   workflow_call:
     inputs:
+      runner:
+        description: 'Where the jobs run, as JSON: one runner label or an array of labels (default: "ubuntu-latest")'
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
       wp_env:
         description: 'Deploy target passed positionally to bin/deploy.sh — dev|staging|production (default: dev)'
         type: string
@@ -108,7 +113,7 @@ permissions:
 jobs:
   deploy:
     name: build + deploy to WP Engine
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     environment: ${{ inputs.github_environment }}
     timeout-minutes: 30
     env:
