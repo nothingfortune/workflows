@@ -97,7 +97,7 @@ or newer.
 | REF-002 | An unlisted dependency | error |
 | REF-003 | A path that does not exist, named in a `package.json` script, a `knip.json` `entry` or `project`, or a workflow `run:` or `uses: ./` line (`run:` paths in a callable workflow are not checked) | error |
 | DEAD-001 | An orphaned file | warning |
-| DEAD-002 | An unused export | warning |
+| DEAD-002 | An unused export, or an unused `exports` or `imports` subpath in `package.json` (knip's `subpaths` type, new in knip 6.46) | warning |
 | DEAD-003 | An unused dependency | warning |
 | DEAD-004 | Code reachable only from tests (a file or an export) | warning |
 | CYC-001 | A circular dependency | warning |

@@ -11,6 +11,7 @@ export class AnalysisError extends Error {
 }
 const RULE_FOR = {
     files: 'DEAD-001',
+    subpaths: 'DEAD-002',
     dependencies: 'DEAD-003',
     devDependencies: 'DEAD-003',
     catalog: 'DEAD-003',
