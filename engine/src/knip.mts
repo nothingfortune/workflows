@@ -18,6 +18,7 @@ type Item = { name?: string; specifier?: string; line?: number; col?: number };
 
 const RULE_FOR: Readonly<Record<string, RuleId>> = {
   files: 'DEAD-001',
+  subpaths: 'DEAD-002',
   dependencies: 'DEAD-003',
   devDependencies: 'DEAD-003',
   catalog: 'DEAD-003',

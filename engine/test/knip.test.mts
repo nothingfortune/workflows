@@ -43,6 +43,25 @@ test('an unrelated edit above a finding keeps its fingerprint', () => {
   }
 });
 
+test('knip 6.46 rows carrying an empty subpaths list map cleanly', () => {
+  assert.deepEqual(mapKnip({ issues: [{ file: 'package.json', subpaths: [] }] }, 'default'), []);
+});
+
+test('an unused package.json subpath maps to DEAD-002 naming the subpath', () => {
+  const found = mapKnip({ issues: [{ file: 'package.json', subpaths: [{ name: './extra', line: 7, col: 5 }] }] }, 'default');
+  assert.deepEqual(
+    found.map((f) => [f.ruleId, f.file, f.symbol, f.line]),
+    [['DEAD-002', 'package.json', './extra', 7]],
+  );
+});
+
+test('a real knip run reports an unused package.json subpath as DEAD-002', () => {
+  const got = analyze(fixture('knip-subpath'))
+    .map((f) => [f.ruleId, f.file, f.symbol ?? ''].join(' ').trim())
+    .sort();
+  assert.deepEqual(got, ['DEAD-001 src/unused.ts', 'DEAD-002 package.json #unused']);
+});
+
 test('an unknown knip issue type is an analysis failure', () => {
   assert.throws(() => mapKnip({ issues: [{ file: 'a.ts', brandNew: [{}] }] }, 'default'), /unknown knip issue type brandNew/);
 });
